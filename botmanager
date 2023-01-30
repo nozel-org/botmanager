@@ -1,7 +1,7 @@
 #!/bin/sh
 
 #############################################################################
-# Version 0.3.0-RELEASE (30-01-2023)
+# Version 0.4.0-RELEASE (30-01-2023)
 #############################################################################
 
 #############################################################################
@@ -20,7 +20,7 @@
 #############################################################################
 
 # serverbot version
-BOTMANAGER_VERSION='0.3.0'
+BOTMANAGER_VERSION='0.4.0'
 
 # commands
 CURL="$(command -v curl)"
@@ -215,53 +215,210 @@ option_disable_cron() {
 # SUPPORT FUNCTIONS
 ####################################################################################################
 
-evaluate_variable() {
-    PROGRAM_NAME="${1}"
-    PROGRAM_VAR="${2}"
-
-    #VARIABLES=`set | grep "^$pattern.*=" | cut -f 1 -d '='`
-    EVALUATION_OUTPUT=`set | grep "${PROGRAM_NAME}_${PROGRAM_VAR}" | cut -f 1 -d '='`
-    for v in $EVALUATION_OUTPUT; do
-        eval vval="\$${v}"
-        echo $vval
-    done
-}   
+version() { 
+    printf "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; 
+}
 
 ####################################################################################################
 # GATHER FUNCTIONS
 ####################################################################################################
 
-gather_bot_information() {
+gather_latest_bot_information() {
     BOTMANAGER_CONFIG_TEMP_FILE="$(mktemp)"
     wget -q "${BOTMANAGER_CONFIG_SOURCE}" -O "${BOTMANAGER_CONFIG_TEMP_FILE}"
 }
 
-remove_bot_information() {
-    rm "${BOTMANAGER_CONFIG_TEMP_FILE}"
+gather_local_bot_information() {
+    BOTMANAGER_INSTALLED='0'
+    SERVERBOT_INSTALLED='0'
+    BACKUPBOT_INSTALLED='0'
+    UPTIMEBOT_INSTALLED='0'
+    UPDATEBOT_INSTALLED='0'
+    SPARRY_INSTALLED='0'
+    TORBOT_INSTALLED='0'
+
+    if [ -f "${BOTMANAGER_PROGRAM_DESTINATION}" ]; then
+        BOTMANAGER_INSTALLED='YES'
+        BOTMANAGER_INSTALL_LOCATION="${BOTMANAGER_PROGRAM_DESTINATION}"
+        BOTMANAGER_LOCAL_VERSION="$(cat "${BOTMANAGER_PROGRAM_DESTINATION}" | grep "BOTMANAGER_VERSION=" | cut -f 2 -d '=' | tr -d \')"
+        BOTMANAGER_LATEST_VERSION="${BOTMANAGER_VERSION}"
+        if [ $(version "${BOTMANAGER_LOCAL_VERSION}") -ge $(version "${BOTMANAGER_LATEST_VERSION}") ]; then
+            BOTMANAGER_STATUS='OK'
+        else
+            BOTMANAGER_STATUS="OUTDATED"
+        fi
+    else
+        BOTMANAGER_INSTALLED='NO'
+        BOTMANAGER_INSTALL_LOCATION=''
+        BOTMANAGER_LOCAL_VERSION=''
+        BOTMANAGER_LATEST_VERSION=''
+        BOTMANAGER_UP_TO_DATE=''
+    fi
+    if [ -f "${SERVERBOT_PROGRAM_DESTINATION}" ]; then
+        SERVERBOT_INSTALLED='YES'
+        SERVERBOT_INSTALL_LOCATION="${SERVERBOT_PROGRAM_DESTINATION}"
+        SERVERBOT_LOCAL_VERSION="$(cat "${SERVERBOT_PROGRAM_DESTINATION}" | grep "SERVERBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
+        SERVERBOT_LATEST_VERSION="${SERVERBOT_VERSION}"
+        if [ $(version "${SERVERBOT_LOCAL_VERSION}") -ge $(version "${SERVERBOT_LATEST_VERSION}") ]; then
+            SERVERBOT_STATUS='OK'
+        else
+            SERVERBOT_STATUS="OUTDATED"
+        fi
+    else
+        SERVERBOT_INSTALLED='NO'
+        SERVERBOT_LOCAL_VERSION=''
+        SERVERBOT_LATEST_VERSION=''
+        SERVERBOT_UP_TO_DATE=''
+    fi
+    if [ -f "${BACKUPBOT_PROGRAM_DESTINATION}" ]; then
+        BACKUPBOT_INSTALLED='YES'
+        BACKUPBOT_INSTALL_LOCATION="${BACKUPBOT_PROGRAM_DESTINATION}"
+        BACKUPBOT_LOCAL_VERSION="$(cat "${BACKUPBOT_PROGRAM_DESTINATION}" | grep "BACKUPBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
+        BACKUPBOT_LATEST_VERSION="${BACKUPBOT_VERSION}"
+        if [ $(version "${BACKUPBOT_LOCAL_VERSION}") -ge $(version "${BACKUPBOT_LATEST_VERSION}") ]; then
+            BACKUPBOT_STATUS='OK'
+        else
+            BACKUPBOT_STATUS="OUTDATED"
+        fi
+    else
+        BACKUPBOT_INSTALLED='NO'
+        BACKUPBOT_LOCAL_VERSION=''
+        BACKUPBOT_LATEST_VERSION=''
+        BACKUPBOT_UP_TO_DATE=''
+    fi
+    if [ -f "${UPTIMEBOT_PROGRAM_DESTINATION}" ]; then
+        UPTIMEBOT_INSTALLED='YES'
+        UPTIMEBOT_INSTALL_LOCATION="${UPTIMEBOT_PROGRAM_DESTINATION}"
+        UPTIMEBOT_LOCAL_VERSION="$(cat "${UPTIMEBOT_PROGRAM_DESTINATION}" | grep "UPTIMEBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
+        UPTIMEBOT_LATEST_VERSION="${UPTIMEBOT_VERSION}"
+        if [ $(version "${UPTIMEBOT_LOCAL_VERSION}") -ge $(version "${UPTIMEBOT_LATEST_VERSION}") ]; then
+            UPTIMEBOT_STATUS='OK'
+        else
+            UPTIMEBOT_STATUS="OUTDATED"
+        fi
+    else
+        UPTIMEBOT_INSTALLED='NO'
+        UPTIMEBOT_LOCAL_VERSION=''
+        UPTIMEBOT_LATEST_VERSION=''
+        UPTIMEBOT_UP_TO_DATE=''
+    fi
+    if [ -f "${UPDATEBOT_PROGRAM_DESTINATION}" ]; then
+        UPDATEBOT_INSTALLED='YES'
+        UPDATEBOT_INSTALL_LOCATION="${UPDATEBOT_PROGRAM_DESTINATION}"
+        UPDATEBOT_LOCAL_VERSION="$(cat "${UPDATEBOT_PROGRAM_DESTINATION}" | grep "UPDATEBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
+        UPDATEBOT_LATEST_VERSION="${UPDATEBOT_VERSION}"
+        if [ $(version "${UPDATEBOT_LOCAL_VERSION}") -ge $(version "${UPDATEBOT_LATEST_VERSION}") ]; then
+            UPDATEBOT_STATUS='OK'
+        else
+            UPDATEBOT_STATUS="OUTDATED"
+        fi
+    else
+        UPDATEBOT_INSTALLED='NO'
+        UPDATEBOT_LOCAL_VERSION=''
+        UPDATEBOT_LATEST_VERSION=''
+        UPDATEBOT_UP_TO_DATE=''
+    fi
+    if [ -f "${SPARRY_PROGRAM_DESTINATION}" ]; then
+        SPARRY_INSTALLED='YES'
+        SPARRY_INSTALL_LOCATION="${SPARRY_PROGRAM_DESTINATION}"
+        SPARRY_LOCAL_VERSION="$(cat "${SPARRY_PROGRAM_DESTINATION}" | grep "SPARRY_VERSION=" | cut -f 2 -d '=' | tr -d \')"
+        SPARRY_LATEST_VERSION="${SPARRY_VERSION}"
+        if [ $(version "${SPARRY_LOCAL_VERSION}") -ge $(version "${SPARRY_LATEST_VERSION}") ]; then
+            SPARRY_STATUS='OK'
+        else
+            SPARRY_STATUS="OUTDATED"
+        fi
+    else
+        SPARRY_INSTALLED='NO'
+        SPARRY_LOCAL_VERSION=''
+        SPARRY_LATEST_VERSION=''
+        SPARRY_UP_TO_DATE=''
+    fi
+    if [ -f "${TORBOT_PROGRAM_DESTINATION}" ]; then
+        TORBOT_INSTALLED='YES'
+        TORBOT_INSTALL_LOCATION="${TORBOT_PROGRAM_DESTINATION}"
+        TORBOT_LOCAL_VERSION="$(cat "${TORBOT_PROGRAM_DESTINATION}" | grep "TORBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
+        TORBOT_LATEST_VERSION="${TORBOT_VERSION}"
+        if [ $(version "${TORBOT_LOCAL_VERSION}") -ge $(version "${TORBOT_LATEST_VERSION}") ]; then
+            TORBOT_STATUS='OK'
+        else
+            TORBOT_STATUS="OUTDATED"
+        fi
+    else
+        TORBOT_INSTALLED='NO'
+        TORBOT_LOCAL_VERSION=''
+        TORBOT_LATEST_VERSION=''
+        TORBOT_UP_TO_DATE=''
+    fi
 }
 
+remove_temp_files() {
+    if [ -f "${BOTMANAGER_CONFIG_TEMP_FILE}" ]; then
+        rm "${BOTMANAGER_CONFIG_TEMP_FILE}"
+    fi
+}
 
 ####################################################################################################
 # FEATURE FUNCTIONS
 ####################################################################################################
 
 feature_overview() {
-    gather_bot_information
-
-    # source botmanager config variables
+    gather_latest_bot_information
     . "${BOTMANAGER_CONFIG_TEMP_FILE}"
+    gather_local_bot_information
 
-    # generate overview
-    for program in $(echo $BOTS); do
-        #for i in `evaluate_variable $program name`; do
-        for i in `evaluate_variable ${program} NAME`; do
-            echo $i
+    DIVIDER="=========================================================================================="
+    HEADER="\n %-4s %-12s %-10s %-10s %-8s %-8s %-20s\n"
+    FORMAT=" %-4s %-12s %-10s %-10s %-8s %-8s %-20s\n"
+    WIDTH="90"
+    printf "%b" "${BOLD}"
+    printf "${HEADER}" "NR" "BOT" "INSTALLED" "STATUS" "LOCAL" "LATEST" "LOCATION"
+    printf "%${WIDTH}.${WIDTH}s\n" "${DIVIDER}"
+
+    printf "${FORMAT}" "1" "${BOTMANAGER_NAME}" "${BOTMANAGER_INSTALLED}" "${BOTMANAGER_STATUS}" "${BOTMANAGER_LOCAL_VERSION}" "${BOTMANAGER_LATEST_VERSION}" "${BOTMANAGER_INSTALL_LOCATION}"
+    printf "${FORMAT}" "2" "${SERVERBOT_NAME}" "${SERVERBOT_INSTALLED}" "${SERVERBOT_STATUS}" "${SERVERBOT_LOCAL_VERSION}" "${SERVERBOT_LATEST_VERSION}" "${SERVERBOT_INSTALL_LOCATION}"
+    printf "${FORMAT}" "3" "${BACKUPBOT_NAME}" "${BACKUPBOT_INSTALLED}" "${BACKUPBOT_STATUS}" "${BACKUPBOT_LOCAL_VERSION}" "${BACKUPBOT_LATEST_VERSION}" "${BACKUPBOT_INSTALL_LOCATION}"
+    printf "${FORMAT}" "4" "${UPTIMEBOT_NAME}" "${UPTIMEBOT_INSTALLED}" "${UPTIMEBOT_STATUS}" "${UPTIMEBOT_LOCAL_VERSION}" "${UPTIMEBOT_LATEST_VERSION}" "${UPTIMEBOT_INSTALL_LOCATION}"
+    printf "${FORMAT}" "5" "${UPDATEBOT_NAME}" "${UPDATEBOT_INSTALLED}" "${UPDATEBOT_STATUS}" "${UPDATEBOT_LOCAL_VERSION}" "${UPDATEBOT_LATEST_VERSION}" "${UPDATEBOT_INSTALL_LOCATION}"
+    printf "${FORMAT}" "6" "${SPARRY_NAME}" "${SPARRY_INSTALLED}" "${SPARRY_STATUS}" "${SPARRY_LOCAL_VERSION}" "${SPARRY_LATEST_VERSION}" "${SPARRY_INSTALL_LOCATION}"
+    printf "${FORMAT}" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}" "${TORBOT_STATUS}" "${TORBOT_LOCAL_VERSION}" "${TORBOT_LATEST_VERSION}" "${TORBOT_INSTALL_LOCATION}"
+    printf "%b" "${NC}"
+
+    remove_temp_files
+}
+
+feature_install() {
+    gather_latest_bot_information
+    . "${BOTMANAGER_CONFIG_TEMP_FILE}"
+    gather_local_bot_information
+
+    DIVIDER="======================================================================"
+    HEADER="\n %-4s %-12s %-10s %-10s\n"
+    FORMAT=" %-4s %-12s %-10s %-10s\n"
+    WIDTH="70"
+    printf "%b" "${BOLD}"
+    printf "${HEADER}" "NR" "BOT" "INSTALLED" "DESCRIPTION"
+    printf "%${WIDTH}.${WIDTH}s\n" "${DIVIDER}"
+
+    printf "${FORMAT}" "1" "${BOTMANAGER_NAME}" "${BOTMANAGER_INSTALLED}"
+    printf "${FORMAT}" "2" "${SERVERBOT_NAME}" "${SERVERBOT_INSTALLED}"
+    printf "${FORMAT}" "3" "${BACKUPBOT_NAME}" "${BACKUPBOT_INSTALLED}"
+    printf "${FORMAT}" "4" "${UPTIMEBOT_NAME}" "${UPTIMEBOT_INSTALLED}"
+    printf "${FORMAT}" "5" "${UPDATEBOT_NAME}" "${UPDATEBOT_INSTALLED}"
+    printf "${FORMAT}" "6" "${SPARRY_NAME}" "${SPARRY_INSTALLED}"
+    printf "${FORMAT}\n" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}"
+
+    while true
+        do
+            read -r -p 'Choose program to install (number): ' PROGRAM_NUMBER_TO_INSTALL
+            [ "${PROGRAM_NUMBER_TO_INSTALL}" -ge '1' ] && [ "${PROGRAM_NUMBER_TO_INSTALL}" -le '7' ] && break
+            error 'enter number from 1 to 7 or press ctrl+c to abort'
         done
-        #BOT_NAME="${program}_NAME"
-        #echo "${BOT_NAME}"
-    done
+    echo $PROGRAM_NUMBER_TO_INSTALL
 
-    remove_bot_information
+    printf "%b" "${NC}"
+    remove_temp_files
+
 }
 
 ####################################################################################################
