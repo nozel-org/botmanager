@@ -1,7 +1,7 @@
 #!/bin/sh
 
 #############################################################################
-# Version 0.7.0-RELEASE (31-01-2023)
+# Version 0.8.0-RELEASE (31-01-2023)
 #############################################################################
 
 #############################################################################
@@ -20,7 +20,7 @@
 #############################################################################
 
 # serverbot version
-BOTMANAGER_VERSION='0.7.0'
+BOTMANAGER_VERSION='0.8.0'
 
 # commands
 CURL="$(command -v curl)"
@@ -365,8 +365,8 @@ feature_overview() {
     gather_local_bot_information
 
     DIVIDER="=========================================================================================="
-    HEADER="\n %-4s %-12s %-10s %-10s %-8s %-8s %-20s\n"
-    FORMAT=" %-4s %-12s %-10s %-10s %-8s %-8s %-20s\n"
+    HEADER="\n %-4s %-12s %-10s %-7s %-6s %-7s %-20s\n"
+    FORMAT=" %-4s %-12s %-10s %-7s %-6s %-7s %-20s\n"
     WIDTH="90"
     printf "%b" "${BOLD}"
     printf "${HEADER}" "NR" "BOT" "INSTALLED" "STATUS" "LOCAL" "LATEST" "LOCATION"
@@ -378,26 +378,26 @@ feature_overview() {
     printf "${FORMAT}" "4" "${UPTIMEBOT_NAME}" "${UPTIMEBOT_INSTALLED}" "${UPTIMEBOT_STATUS}" "${UPTIMEBOT_LOCAL_VERSION}" "${UPTIMEBOT_LATEST_VERSION}" "${UPTIMEBOT_INSTALL_LOCATION}"
     printf "${FORMAT}" "5" "${UPDATEBOT_NAME}" "${UPDATEBOT_INSTALLED}" "${UPDATEBOT_STATUS}" "${UPDATEBOT_LOCAL_VERSION}" "${UPDATEBOT_LATEST_VERSION}" "${UPDATEBOT_INSTALL_LOCATION}"
     printf "${FORMAT}" "6" "${SPARRY_NAME}" "${SPARRY_INSTALLED}" "${SPARRY_STATUS}" "${SPARRY_LOCAL_VERSION}" "${SPARRY_LATEST_VERSION}" "${SPARRY_INSTALL_LOCATION}"
-    printf "${FORMAT}" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}" "${TORBOT_STATUS}" "${TORBOT_LOCAL_VERSION}" "${TORBOT_LATEST_VERSION}" "${TORBOT_INSTALL_LOCATION}"
+    printf "${FORMAT}" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}" "${TORBOT_STATUS}" "${TORBOT_LOCAL_VERSION}" "${TORBOT_LATEST_VERSION}" "${TORBOT_INSTALL_LOCATION}\n"
     printf "%b" "${NC}"
 
     remove_temp_files
+    exit 0
 }
 
 feature_install() {
     gather_latest_bot_information
-    . "${BOTMANAGER_CONFIG_TEMP_FILE}"
     gather_local_bot_information
 
+    # provide overview
     DIVIDER="=========================================================================================="
     HEADER="\n %-4s %-12s %-10s %-10s\n"
     FORMAT_OVERVIEW=" %-4s %-12s %-10s %-10s\n"
-    FORMAT_INSTALLATION=" %-5s %-12s %-5s %-12s\n"
+    FORMAT_INSTALLATION=" %-5s %-27s %-4s %-30s\n"
     WIDTH="90"
     printf "%b" "${BOLD}"
     printf "${HEADER}" "NR" "BOT" "INSTALLED" "DESCRIPTION"
     printf "%${WIDTH}.${WIDTH}s\n" "${DIVIDER}"
-
     printf "${FORMAT_OVERVIEW}" "1" "${BOTMANAGER_NAME}" "${BOTMANAGER_INSTALLED}" "${BOTMANAGER_DESCRIPTION}"
     printf "${FORMAT_OVERVIEW}" "2" "${SERVERBOT_NAME}" "${SERVERBOT_INSTALLED}" "${SERVERBOT_DESCRIPTION}"
     printf "${FORMAT_OVERVIEW}" "3" "${BACKUPBOT_NAME}" "${BACKUPBOT_INSTALLED}" "${BACKUPBOT_DESCRIPTION}"
@@ -406,16 +406,21 @@ feature_install() {
     printf "${FORMAT_OVERVIEW}" "6" "${SPARRY_NAME}" "${SPARRY_INSTALLED}" "${SPARRY_DESCRIPTION}"
     printf "${FORMAT_OVERVIEW}\n" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}" "${TORBOT_DESCRIPTION}"
 
+    # let the user choose
     while true
         do
-            read -r -p 'Choose program to install (number): ' PROGRAM_NUMBER_TO_INSTALL
+            read -r -p ' Choose program to install (number): ' PROGRAM_NUMBER_TO_INSTALL
             [ "${PROGRAM_NUMBER_TO_INSTALL}" -ge '1' ] && [ "${PROGRAM_NUMBER_TO_INSTALL}" -le '7' ] && break
             notice 'enter number from 1 to 7 or press ctrl+c to abort'
         done
-    
+
+    # install chosen software    
     if [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '1' ]; then
-        echo 'wip'
+        error 'botmanager: error: cannot install myself :('
     elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '2' ]; then
+        if [ "${SERVERBOT_INSTALLED}" = 'YES' ]; then
+            error 'botmanager: error: serverbot is already installed'
+        fi
         printf "\n Installing %s\n" "${SERVERBOT_NAME}"
         printf "${FORMAT_INSTALLATION}" "(1/6)" "Downloading ${SERVERBOT_NAME}" "=>" "${SERVERBOT_PROGRAM_DESTINATION}"
         wget -q "${SERVERBOT_PROGRAM_SOURCE}" -O "${SERVERBOT_PROGRAM_DESTINATION}"
@@ -423,83 +428,216 @@ feature_install() {
         chown "${SERVERBOT_PROGRAM_OWNER}:${SERVERBOT_PROGRAM_GROUP}" "${SERVERBOT_PROGRAM_DESTINATION}"
         printf "${FORMAT_INSTALLATION}" "(3/6)" "Setting permissions" "=>" "${SERVERBOT_PROGRAM_ACCESS}"
         chmod "${SERVERBOT_PROGRAM_ACCESS}" "${SERVERBOT_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(4/6)" "Downloading configuration file" "=>" "${SERVERBOT_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(4/6)" "Downloading configuration" "=>" "${SERVERBOT_CONFIG_DESTINATION}"
         wget -q "${SERVERBOT_CONFIG_SOURCE}" -O "${SERVERBOT_CONFIG_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(5/6)" "Setting ownership" "=>" "${SERVERBOT_CONFIG_OWNERSHIP}:${SERVERBOT_CONFIG_GROUP}"
-        chown "${SERVERBOT_CONFIG_OWNERSHIP}:${SERVERBOT_CONFIG_GROUP}" "${SERVERBOT_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(5/6)" "Setting ownership" "=>" "${SERVERBOT_CONFIG_OWNER}:${SERVERBOT_CONFIG_GROUP}"
+        chown "${SERVERBOT_CONFIG_OWNER}:${SERVERBOT_CONFIG_GROUP}" "${SERVERBOT_CONFIG_DESTINATION}"
         printf "${FORMAT_INSTALLATION}" "(6/6)" "Setting permissions" "=>" "${SERVERBOT_CONFIG_ACCESS}"
         chmod "${SERVERBOT_CONFIG_ACCESS}" "${SERVERBOT_CONFIG_DESTINATION}"
-        printf "\nAll done! \\\( ^ ᴗ ^ )/\n"
-        printf " - Installed %s to %s\n" "${SERVERBOT_NAME}" "${SERVERBOT_PROGRAM_DESTINATION}"
-        printf " - Installed %s.conf to %s\n" "${SERVERBOT_NAME}" "${SERVERBOT_CONFIG_DESTINATION}"
+        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '3' ]; then
-        echo 'wip'
+        if [ "${BACKUPBOT_INSTALLED}" = 'YES' ]; then
+            error 'botmanager: error: backupbot is already installed'
+        fi
+        printf "\n Installing %s\n" "${BACKUPBOT_NAME}"
+        printf "${FORMAT_INSTALLATION}" "(1/6)" "Downloading ${BACKUPBOT_NAME}" "=>" "${BACKUPBOT_PROGRAM_DESTINATION}"
+        wget -q "${BACKUPBOT_PROGRAM_SOURCE}" -O "${BACKUPBOT_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(2/6)" "Setting ownership" "=>"  "${BACKUPBOT_PROGRAM_OWNER}:${BACKUPBOT_PROGRAM_GROUP}"
+        chown "${BACKUPBOT_PROGRAM_OWNER}:${BACKUPBOT_PROGRAM_GROUP}" "${BACKUPBOT_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(3/6)" "Setting permissions" "=>" "${BACKUPBOT_PROGRAM_ACCESS}"
+        chmod "${BACKUPBOT_PROGRAM_ACCESS}" "${BACKUPBOT_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(4/6)" "Downloading configuration" "=>" "${BACKUPBOT_CONFIG_DESTINATION}"
+        wget -q "${BACKUPBOT_CONFIG_SOURCE}" -O "${BACKUPBOT_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(5/6)" "Setting ownership" "=>" "${BACKUPBOT_CONFIG_OWNER}:${BACKUPBOT_CONFIG_GROUP}"
+        chown "${BACKUPBOT_CONFIG_OWNER}:${BACKUPBOT_CONFIG_GROUP}" "${BACKUPBOT_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(6/6)" "Setting permissions" "=>" "${BACKUPBOT_CONFIG_ACCESS}"
+        chmod "${BACKUPBOT_CONFIG_ACCESS}" "${BACKUPBOT_CONFIG_DESTINATION}"
+        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '4' ]; then
-        echo 'wip'
+        if [ "${UPTIMEBOT_INSTALLED}" = 'YES' ]; then
+            error 'botmanager: error: uptimebot is already installed'
+        fi
+        printf "\n Installing %s\n" "${UPTIMEBOT_NAME}"
+        printf "${FORMAT_INSTALLATION}" "(1/9)" "Downloading ${UPTIMEBOT_NAME}" "=>" "${UPTIMEBOT_PROGRAM_DESTINATION}"
+        wget -q "${UPTIMEBOT_PROGRAM_SOURCE}" -O "${UPTIMEBOT_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(2/9)" "Setting ownership" "=>"  "${UPTIMEBOT_PROGRAM_OWNER}:${UPTIMEBOT_PROGRAM_GROUP}"
+        chown "${UPTIMEBOT_PROGRAM_OWNER}:${UPTIMEBOT_PROGRAM_GROUP}" "${UPTIMEBOT_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(3/9)" "Setting permissions" "=>" "${UPTIMEBOT_PROGRAM_ACCESS}"
+        chmod "${UPTIMEBOT_PROGRAM_ACCESS}" "${UPTIMEBOT_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(4/9)" "Downloading configuration" "=>" "${UPTIMEBOT_CONFIG_DESTINATION}"
+        wget -q "${UPTIMEBOT_CONFIG_SOURCE}" -O "${UPTIMEBOT_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(5/9)" "Setting ownership" "=>" "${UPTIMEBOT_CONFIG_OWNER}:${UPTIMEBOT_CONFIG_GROUP}"
+        chown "${UPTIMEBOT_CONFIG_OWNER}:${UPTIMEBOT_CONFIG_GROUP}" "${UPTIMEBOT_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(6/9)" "Setting permissions" "=>" "${UPTIMEBOT_CONFIG_ACCESS}"
+        chmod "${UPTIMEBOT_CONFIG_ACCESS}" "${UPTIMEBOT_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(7/9)" "Downloading targets.conf" "=>" "${UPTIMEBOT_USERCONF_DESTINATION}"
+        wget -q "${UPTIMEBOT_USERCONF_SOURCE}" -O "${UPTIMEBOT_USERCONF_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(8/9)" "Setting ownership" "=>" "${UPTIMEBOT_USERCONF_OWNER}:${UPTIMEBOT_USERCONF_GROUP}"
+        chown "${UPTIMEBOT_USERCONF_OWNER}:${UPTIMEBOT_USERCONF_GROUP}" "${UPTIMEBOT_USERCONF_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(9/9)" "Setting permissions" "=>" "${UPTIMEBOT_USERCONF_ACCESS}"
+        chmod "${UPTIMEBOT_USERCONF_ACCESS}" "${UPTIMEBOT_USERCONF_DESTINATION}"
+        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '5' ]; then
-        echo 'wip'
+        if [ "${UPDATEBOT_INSTALLED}" = 'YES' ]; then
+            error 'botmanager: error: updatebot is already installed'
+        fi
+        printf "\n Installing %s\n" "${UPDATEBOT_NAME}"
+        printf "${FORMAT_INSTALLATION}" "(1/6)" "Downloading ${UPDATEBOT_NAME}" "=>" "${UPDATEBOT_PROGRAM_DESTINATION}"
+        wget -q "${UPDATEBOT_PROGRAM_SOURCE}" -O "${UPDATEBOT_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(2/6)" "Setting ownership" "=>"  "${UPDATEBOT_PROGRAM_OWNER}:${UPDATEBOT_PROGRAM_GROUP}"
+        chown "${UPDATEBOT_PROGRAM_OWNER}:${UPDATEBOT_PROGRAM_GROUP}" "${UPDATEBOT_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(3/6)" "Setting permissions" "=>" "${UPDATEBOT_PROGRAM_ACCESS}"
+        chmod "${UPDATEBOT_PROGRAM_ACCESS}" "${UPDATEBOT_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(4/6)" "Downloading configuration" "=>" "${UPDATEBOT_CONFIG_DESTINATION}"
+        wget -q "${UPDATEBOT_CONFIG_SOURCE}" -O "${UPDATEBOT_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(5/6)" "Setting ownership" "=>" "${UPDATEBOT_CONFIG_OWNER}:${UPDATEBOT_CONFIG_GROUP}"
+        chown "${UPDATEBOT_CONFIG_OWNER}:${UPDATEBOT_CONFIG_GROUP}" "${UPDATEBOT_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(6/6)" "Setting permissions" "=>" "${UPDATEBOT_CONFIG_ACCESS}"
+        chmod "${UPDATEBOT_CONFIG_ACCESS}" "${UPDATEBOT_CONFIG_DESTINATION}"
+        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '6' ]; then
-        echo 'wip'
+        if [ "${SPARRY_INSTALLED}" = 'YES' ]; then
+            error 'botmanager: error: sparry is already installed'
+        fi
+        printf "\n Installing %s\n" "${SPARRY_NAME}"
+        printf "${FORMAT_INSTALLATION}" "(1/6)" "Downloading ${SPARRY_NAME}" "=>" "${SPARRY_PROGRAM_DESTINATION}"
+        wget -q "${SPARRY_PROGRAM_SOURCE}" -O "${SPARRY_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(2/6)" "Setting ownership" "=>"  "${SPARRY_PROGRAM_OWNER}:${SPARRY_PROGRAM_GROUP}"
+        chown "${SPARRY_PROGRAM_OWNER}:${SPARRY_PROGRAM_GROUP}" "${SPARRY_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(3/6)" "Setting permissions" "=>" "${SPARRY_PROGRAM_ACCESS}"
+        chmod "${SPARRY_PROGRAM_ACCESS}" "${SPARRY_PROGRAM_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(4/6)" "Downloading configuration" "=>" "${SPARRY_CONFIG_DESTINATION}"
+        wget -q "${SPARRY_CONFIG_SOURCE}" -O "${SPARRY_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(5/6)" "Setting ownership" "=>" "${SPARRY_CONFIG_OWNER}:${SPARRY_CONFIG_GROUP}"
+        chown "${SPARRY_CONFIG_OWNER}:${SPARRY_CONFIG_GROUP}" "${SPARRY_CONFIG_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(6/6)" "Setting permissions" "=>" "${SPARRY_CONFIG_ACCESS}"
+        chmod "${SPARRY_CONFIG_ACCESS}" "${SPARRY_CONFIG_DESTINATION}"
+        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '7' ]; then
-        echo 'wip'
+        error 'botmanager: error: torbot is not finished yet'
     fi
-
     printf "%b" "${NC}"
     remove_temp_files
+    exit 0
 }
 
 feature_remove() {
     gather_latest_bot_information
-    . "${BOTMANAGER_CONFIG_TEMP_FILE}"
     gather_local_bot_information
 
+    # provide overview
     DIVIDER="=========================================================================================="
     HEADER="\n %-4s %-12s %-10s %-10s\n"
-    FORMAT=" %-4s %-12s %-10s %-10s\n"
+    FORMAT_OVERVIEW=" %-4s %-12s %-10s %-10s\n"
+    FORMAT_REMOVE=" %-5s %-43s %-4s %-30s\n"
+    FORMAT_REMOVE_LONG=" %-5s %-52s %-4s %-30s\n"
     WIDTH="90"
     printf "%b" "${BOLD}"
     printf "${HEADER}" "NR" "BOT" "INSTALLED" "DESCRIPTION"
     printf "%${WIDTH}.${WIDTH}s\n" "${DIVIDER}"
+    printf "${FORMAT_OVERVIEW}" "1" "${BOTMANAGER_NAME}" "${BOTMANAGER_INSTALLED}" "${BOTMANAGER_DESCRIPTION}"
+    printf "${FORMAT_OVERVIEW}" "2" "${SERVERBOT_NAME}" "${SERVERBOT_INSTALLED}" "${SERVERBOT_DESCRIPTION}"
+    printf "${FORMAT_OVERVIEW}" "3" "${BACKUPBOT_NAME}" "${BACKUPBOT_INSTALLED}" "${BACKUPBOT_DESCRIPTION}"
+    printf "${FORMAT_OVERVIEW}" "4" "${UPTIMEBOT_NAME}" "${UPTIMEBOT_INSTALLED}" "${UPTIMEBOT_DESCRIPTION}"
+    printf "${FORMAT_OVERVIEW}" "5" "${UPDATEBOT_NAME}" "${UPDATEBOT_INSTALLED}" "${UPDATEBOT_DESCRIPTION}"
+    printf "${FORMAT_OVERVIEW}" "6" "${SPARRY_NAME}" "${SPARRY_INSTALLED}" "${SPARRY_DESCRIPTION}"
+    printf "${FORMAT_OVERVIEW}\n" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}" "${TORBOT_DESCRIPTION}"
 
-    printf "${FORMAT}" "1" "${BOTMANAGER_NAME}" "${BOTMANAGER_INSTALLED}" "${BOTMANAGER_DESCRIPTION}"
-    printf "${FORMAT}" "2" "${SERVERBOT_NAME}" "${SERVERBOT_INSTALLED}" "${SERVERBOT_DESCRIPTION}"
-    printf "${FORMAT}" "3" "${BACKUPBOT_NAME}" "${BACKUPBOT_INSTALLED}" "${BACKUPBOT_DESCRIPTION}"
-    printf "${FORMAT}" "4" "${UPTIMEBOT_NAME}" "${UPTIMEBOT_INSTALLED}" "${UPTIMEBOT_DESCRIPTION}"
-    printf "${FORMAT}" "5" "${UPDATEBOT_NAME}" "${UPDATEBOT_INSTALLED}" "${UPDATEBOT_DESCRIPTION}"
-    printf "${FORMAT}" "6" "${SPARRY_NAME}" "${SPARRY_INSTALLED}" "${SPARRY_DESCRIPTION}"
-    printf "${FORMAT}\n" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}" "${TORBOT_DESCRIPTION}"
-
+    # let the user choose
     while true
         do
-            read -r -p 'Choose program to remove (number): ' PROGRAM_NUMBER_TO_REMOVE
+            read -r -p ' Choose program to remove (number): ' PROGRAM_NUMBER_TO_REMOVE
             [ "${PROGRAM_NUMBER_TO_REMOVE}" -ge '1' ] && [ "${PROGRAM_NUMBER_TO_REMOVE}" -le '7' ] && break
-            printf "%benter number from 1 to 7 or press ctrl+c to abort%b\n" "${LRED}" "${NC}"
+            notice 'enter number from 1 to 7 or press ctrl+c to abort'
         done
-
+    # remove chosen software
     if [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '1' ]; then
-        echo 'wip'
+        error 'botmanager: error: cannot remove myself :('
     elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '2' ]; then
-        printf " (1/2) Removing %s\n" "${SERVERBOT_PROGRAM_DESTINATION}"
-        rm "${SERVERBOT_PROGRAM_DESTINATION}"
-        printf " (2/2) Removing %s\n" "${SERVERBOT_CONFIG_DESTINATION}"
-        rm "${SERVERBOT_CONFIG_DESTINATION}"
-        printf "\nAll done! \\\( ^ ᴗ ^ )/\n"
-        printf " - Removed %s\n" "${SERVERBOT_PROGRAM_DESTINATION}"
-        printf " - Removed %s\n" "${SERVERBOT_CONFIG_DESTINATION}"
+        printf "\n Removing %s\n" "${SERVERBOT_NAME}"
+        if [ -f "${SERVERBOT_PROGRAM_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE}" "(1/2)" "Found ${SERVERBOT_PROGRAM_DESTINATION}" "=>" "removing"
+            rm "${SERVERBOT_PROGRAM_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE}" "(1/2)" "Can't find ${SERVERBOT_PROGRAM_DESTINATION}" "=>" "ignoring"
+        fi
+        if [ -f "${SERVERBOT_CONFIG_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE}" "(2/2)" "Found ${SERVERBOT_CONFIG_DESTINATION}" "=>" "removing"
+            rm "${SERVERBOT_CONFIG_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE}" "(2/2)" "Can't find ${SERVERBOT_CONFIG_DESTINATION}" "=>" "ignoring"
+        fi
+        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '3' ]; then
-        echo 'wip'
+        printf "\n Removing %s\n" "${BACKUPBOT_NAME}"
+        if [ -f "${BACKUPBOT_PROGRAM_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE}" "(1/2)" "Found ${BACKUPBOT_PROGRAM_DESTINATION}" "=>" "removing"
+            rm "${BACKUPBOT_PROGRAM_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE}" "(1/2)" "Can't find ${BACKUPBOT_PROGRAM_DESTINATION}" "=>" "ignoring"
+        fi
+        if [ -f "${BACKUPBOT_CONFIG_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE}" "(2/2)" "Found ${BACKUPBOT_CONFIG_DESTINATION}" "=>" "removing"
+            rm "${BACKUPBOT_CONFIG_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE}" "(2/2)" "Can't find ${BACKUPBOT_CONFIG_DESTINATION}" "=>" "ignoring"
+        fi
+        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '4' ]; then
-        echo 'wip'
+        printf "\n Removing %s\n" "${UPTIMEBOT_NAME}"
+        if [ -f "${UPTIMEBOT_PROGRAM_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE_LONG}" "(1/3)" "Found ${UPTIMEBOT_PROGRAM_DESTINATION}" "=>" "removing"
+            rm "${UPTIMEBOT_PROGRAM_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE_LONG}" "(1/3)" "Can't find ${UPTIMEBOT_PROGRAM_DESTINATION}" "=>" "ignoring"
+        fi
+        if [ -f "${UPTIMEBOT_CONFIG_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE_LONG}" "(2/3)" "Found ${UPTIMEBOT_CONFIG_DESTINATION}" "=>" "removing"
+            rm "${UPTIMEBOT_CONFIG_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE_LONG}" "(2/3)" "Can't find ${UPTIMEBOT_CONFIG_DESTINATION}" "=>" "ignoring"
+        fi
+        if [ -f "${UPTIMEBOT_USERCONF_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE_LONG}" "(3/3)" "Found ${UPTIMEBOT_USERCONF_DESTINATION}" "=>" "removing"
+            rm "${UPTIMEBOT_USERCONF_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE_LONG}" "(3/3)" "Can't find ${UPTIMEBOT_USERCONF_DESTINATION}" "=>" "ignoring"
+        fi
+        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '5' ]; then
-        echo 'wip'
+        printf "\n Removing %s\n" "${UPDATEBOT_NAME}"
+        if [ -f "${UPDATEBOT_PROGRAM_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE}" "(1/1)" "Found ${UPDATEBOT_PROGRAM_DESTINATION}" "=>" "removing"
+            rm "${UPDATEBOT_PROGRAM_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE}" "(1/1)" "Can't find ${UPDATEBOT_PROGRAM_DESTINATION}" "=>" "ignoring"
+        fi
+        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '6' ]; then
-        echo 'wip'
+        printf "\n Removing %s\n" "${SPARRY_NAME}"
+        if [ -f "${SPARRY_PROGRAM_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE}" "(1/2)" "Found ${SPARRY_PROGRAM_DESTINATION}" "=>" "removing"
+            rm "${SPARRY_PROGRAM_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE}" "(1/2)" "Can't find ${SPARRY_PROGRAM_DESTINATION}" "=>" "ignoring"
+        fi
+        if [ -f "${SPARRY_CONFIG_DESTINATION}" ]; then
+            printf "${FORMAT_REMOVE}" "(2/2)" "Found ${SPARRY_CONFIG_DESTINATION}" "=>" "removing"
+            rm "${SPARRY_CONFIG_DESTINATION}"
+        else
+            printf "${FORMAT_REMOVE}" "(2/2)" "Can't find ${SPARRY_CONFIG_DESTINATION}" "=>" "ignoring"
+        fi
+        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
     elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '7' ]; then
-        echo 'wip'
+        error 'botmanager: error: torbot is not finished yet'
     fi
-
     printf "%b" "${NC}"
     remove_temp_files
+    exit 0
+}
+
+feature_update() {
+    echo 'WIP'
 }
 
 ####################################################################################################
