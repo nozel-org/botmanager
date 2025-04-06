@@ -1,46 +1,57 @@
 #!/bin/sh
 
 #############################################################################
-# Version 1.0.0-RELEASE (21-05-2023)
+# Version 2.0.0-RELEASE (06-04-2025)
 #############################################################################
 
 #############################################################################
-# Copyright 2023 Nozel/Sebas Veeke. Licenced under a Creative Commons
-# Attribution-NonCommercial-ShareAlike 4.0 International License.
+# SPDX-License-Identifier: Apache-2.0
 #
-# See https://creativecommons.org/licenses/by-nc-sa/4.0/
+# Copyright 2023 Sebas Veeke. All rights reserved.
 #
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#############################################################################
+
+#############################################################################
 # Contact:
-# > e-mail      mail@nozel.org
-# > GitHub      nozel-org
+# > E-mail      mail@nozel.org
+# > Website     https://nozel.org
+# > Codeberg    https://codeberg.org/nozel/botmanager
 #############################################################################
 
 #############################################################################
-# VARIABLES
+# PROGRAM VARIABLES
 #############################################################################
 
 # serverbot version
-BOTMANAGER_VERSION='1.0.0'
-
-# commands
-WGET="$(command -v wget)"
+BOTMANAGER_VERSION='2.0.0'
+BOTMANAGER_VERSION_DATE='06-04-2025'
 
 # program variables
-BOTMANAGER_CONFIG_SOURCE='https://raw.githubusercontent.com/nozel-org/botmanager/main/resources/botmanager.conf'
-BOTMANAGER_LOG='/var/log/botmanager.log'
+#BOTMANAGER_CRON='0 3 * * *'
+BOTMANAGER_TEMPORARY_DIRECTORY='/tmp/botmanager'
+BOTMANAGER_MANIFEST_URL='https://codeberg.org/nozel/botmanager/raw/branch/main/resources/manifest.list'
+BOTMANAGER_PKG_URL='https://codeberg.org/nozel/botmanager/raw/branch/main/resources'
 
 # colors
-NC='\033[0;0m'
-BOLD='\033[1m'
-#UNDER='\033[4m'
-#WHITE='\033[1;37m'
-#RED='\033[0;31m'
-#GREEN='\033[0;32m'
+#NC='\033[0;0m'
+#BOLD='\033[1m'
 #YELLOW='\033[1;33m'
-LRED='\033[1;31m'
+#LRED='\033[1;31m'
 #LGREEN='\033[1;32m'
 #LMAGENTA='\033[1;35m'
 #LCYAN='\033[1;36m'
+#WHITE='\033[1;37m'
 
 ####################################################################################################
 # ARGUMENT HANDLING
@@ -92,7 +103,7 @@ while test -n "$1"; do
             shift
             ;;
 
-        --remove|remove|-r)
+        --remove|remove|-r|--uninstall|uninstall|--delete|delete)
             ARGUMENT_REMOVE='1'
             shift
             ;;
@@ -115,6 +126,18 @@ while test -n "$1"; do
     esac
 done
 
+####################################################################################################
+# ERROR AND LOG FUNCTIONS
+####################################################################################################
+
+program_error() {
+    printf "botmanager: error: %s %s %s\n" "${1}" "${2}" "${3}"
+    exit 1
+}
+
+program_logger() {
+    logger -t botmanager "${1}"
+}
 
 ####################################################################################################
 # REQUIREMENT AND VALIDATION FUNCTIONS
@@ -134,10 +157,12 @@ requirement_os() {
     fi
 }
 
-requirement_wget() {
-    # show error when wget cannot be found
-    if [ ! "$(command -v wget)" ]; then
-        error 'botmanager: error: wget is not installed'
+requirement_curl() {
+    # show error if curl cannot be found (which probably means the user has not installed curl)
+    if [ ! "$(command -v curl)" ]; then
+        program_error 'curl is not installed'
+    else
+        CURL="$(command -v curl)"
     fi
 }
 
@@ -146,206 +171,185 @@ requirement_wget() {
 ####################################################################################################
 
 option_version() {
-    printf "%bbotmanager %s %b\n" "${BOLD}" "${BOTMANAGER_VERSION}" "${NC}"
-    printf "%bCopyright (C) 2023 Nozel.%b\n" "${BOLD}" "${NC}"
-    printf "%bLicense CC Attribution-NonCommercial-ShareAlike 4.0 Int.%b\n\n" "${BOLD}" "${NC}"
-    printf "%bWritten by Sebas Veeke%b\n" "${BOLD}" "${NC}"
+    printf "Botmanager %s (%s)\n" "${BOTMANAGER_VERSION}" "${BOTMANAGER_VERSION_DATE}"
+    printf "Copyright (C) 2023 S. Veeke. All rights reserved.\n"
+    printf "SPDX-License-Identifier: Apache-2.0.\n"
+    exit 0
 }
 
 option_help() {
-    printf "%bUsage:%b\n" "${BOLD}" "${NC}"
-    printf "%b  botmanager [feature]...%b\n" "${BOLD}" "${NC}"
-    printf "%b  botmanager [option]...%b\n\n" "${BOLD}" "${NC}"
-    printf "%bFeatures:%b\n" "${BOLD}" "${NC}"
+    printf "Usage:\n"
+    printf "  botmanager [feature]...\n"
+    printf "  botmanager [option]...\n\n"
+    printf "Features:\n"
     printf "  -o, --overview             Shows the bot status on this device\n"
     printf "  -i, --install              Install one of the bots\n"
     printf "  -r, --remove               Remove a installed bot\n"
     printf "  -u, --update               Update all installed bots\n"
     printf "      --unattended           Add to --update for unattended action\n"
-    printf "%bOptions:%b\n" "${BOLD}" "${NC}"
+    printf "Options:\n"
     printf "  --cron                     Set daily automatic update\n"
     printf "  --disable-cron             Set daily automatic update\n"
     printf "  --help                     Display this help and exit\n"
     printf "  --version                  Display version information and exit\n"
 }
 
+#option_cron_validate_schedule() {
+#    # validate whether cron job schedule consists of allowed characters
+#    case "${1}" in
+#        (*[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'!@#$%^&()_+=\[\]{}\|;:",.<>?']*)
+#            CRON_ERROR='1'
+#            printf " >   [!] unsupported characters\n"
+#            ;;
+#        (*)
+#            printf " >   [i] supported characters\n"
+#            ;;
+#    esac
+
+#    # validate whether cron job schedule consists of 5 substrings
+#    if [ "$(printf "%s" "${1}" | awk -F' ' '{print NF}')" -eq 5 ]; then
+#        printf " >   [i] supported format\n"
+#    else
+#        CRON_ERROR='1'
+#        printf " >   [!] unsuported format\n"
+#    fi
+#}
+
+#option_cron_check_configuration() {
+#    # first check whether a automated feature is enabled
+#    if [ "${1}" -ge '1' ]; then
+#        # then check whether the corresponding cron parameter has been set in serverbot.conf
+#        if [ "${2}" -eq '1' ]; then
+#            # then validate the cron parameter and report any issues
+#            printf " >  Validating %s (enabled)\n" "${4}"
+#            option_cron_validate_schedule "${3}"
+#        else
+#            # finally abort when issues are found
+#            printf " >  %s is not set\n" "${4}"
+#            program_error "${4} not set in ${SERVERBOT_CONFIGURATION}"
+#        fi
+#    else
+#        # skip check if feature is disabled
+#        printf " >  Skipping %s (disabled)\n" "${4}"
+#    fi
+#}
+
 option_cron() {
     requirement_root
-
-    printf "%b[1/2] Adding cronjob for automatic bot updates%b\n" "${BOLD}" "${NC}"
+    printf "(1) Adding cronjob for automatic updates\n"
     rm -f /etc/cron.d/botmanager
-    printf "# This cronjob manages daily automated botmanager program updates\n" > /etc/cron.d/botmanager
-    printf "0 1 * * * root /usr/local/bin/botmanager --update --unattended\n" >> /etc/cron.d/botmanager
-    printf "%b[2/2] Changing cronjob owner and group to root:wheel%b\n" "${BOLD}" "${NC}"
+    touch /etc/cron.d/botmanager
+    printf "# This cronjob manages daily automated botmanager updates\n" > /etc/cron.d/botmanager
+    printf "0 3 * * * root curl -s -o /usr/local/bin/botmanager https://codeberg.org/nozel/botmanager/raw/branch/main/botmanager && chown root:wheel /usr/local/bin/botmanager && chmod 555 /usr/local/bin/botmanager\n" >> /etc/cron.d/botmanager
+    printf "# This cronjob manages daily automated botmanager package updates\n" >> /etc/cron.d/botmanager
+    printf "0 4 * * * root /usr/local/bin/botmanager --update --unattended\n" >> /etc/cron.d/botmanager
+    printf "(2) Changing cronjob owner and group to root:wheel\n"
     chown root:wheel /etc/cron.d/botmanager
-    printf "\n%bAll done! \\\( ^ ᴗ ^ )/%b\n" "${BOLD}" "${NC}"
-    printf "\n%bYour new schedule can be found in /etc/cron.d/botmanager.%b\n" "${BOLD}" "${NC}"
+    printf "\nAll done! \\\( ^ ᴗ ^ )/\n"
+    printf "\nYour new schedule can be found in /etc/cron.d/botmanager.\n"
 }
 
 option_disable_cron() {
     requirement_root
-
-    printf "%b[1] Removing botmanager cronjob%b\n" "${BOLD}" "${NC}"
+    printf "[1] Removing botmanager cronjob\n"
     rm -f /etc/cron.d/botmanager
-    printf "\n%bAll done! \\\( ^ ᴗ ^ )/%b\n" "${BOLD}" "${NC}"
+    printf "\nAll done! \\\( ^ ᴗ ^ )/\n"
 }
 
 ####################################################################################################
 # SUPPORT FUNCTIONS
 ####################################################################################################
 
-error() {
-    printf "%b%s%b\n" "${LRED}" "$@" "${NC}"
-    exit 1
-}
-
-notice() {
-    printf "%b%s%b\n" "${LRED}" "$@" "${NC}"
-}
-
-send_error_to_log() {
-    DATE="$(date +%Y-%m-%d)"
-    TIME="$(date +%H:%M:%S)"
-    printf "[%s][%s][ERROR] %s %s %s\n" "${DATE}" "${TIME}" "${1}" "${2}" "${3}" >> ${BOTMANAGER_LOG}
-}
-
-send_notice_to_log() {
-    DATE="$(date +%Y-%m-%d)"
-    TIME="$(date +%H:%M:%S)"
-    printf "[%s][%s][NOTICE] %s %s %s\n" "${DATE}" "${TIME}" "${1}" "${2}" "${3}" >> ${BOTMANAGER_LOG}
-}
-
 version() { 
     printf "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; 
 }
 
-remove_temp_files() {
-    if [ -f "${BOTMANAGER_CONFIG_TEMP_FILE}" ]; then
-        rm "${BOTMANAGER_CONFIG_TEMP_FILE}"
+capitalize() {
+    CAPITALIZED_STRING=''
+    CAPITALIZED_STRING="$(echo ${1} | tr '[a-z]' '[A-Z]')"
+}
+
+create_temporary_directory() {
+    if [ ! -d "${BOTMANAGER_TEMPORARY_DIRECTORY}" ]; then
+        mkdir "${BOTMANAGER_TEMPORARY_DIRECTORY}"
     fi
 }
 
-####################################################################################################
-# GATHER FUNCTIONS
-####################################################################################################
-
-gather_latest_bot_information() {
-    BOTMANAGER_CONFIG_TEMP_FILE="$(mktemp)"
-    "${WGET}" -q "${BOTMANAGER_CONFIG_SOURCE}" -O "${BOTMANAGER_CONFIG_TEMP_FILE}"
-    if [ -f "${BOTMANAGER_CONFIG_TEMP_FILE}" ]; then
-        . "${BOTMANAGER_CONFIG_TEMP_FILE}"
-    else
-        error "Can't fetch remote bot information, check your internet connection"
+remove_temporary_directory() {
+    if [ -d "${BOTMANAGER_TEMPORARY_DIRECTORY}" ]; then
+        rm -rf "${BOTMANAGER_TEMPORARY_DIRECTORY}"
     fi
 }
 
-gather_local_bot_information() {
-    BOTMANAGER_INSTALLED='0'
-    SERVERBOT_INSTALLED='0'
-    BACKUPBOT_INSTALLED='0'
-    UPTIMEBOT_INSTALLED='0'
-    UPDATEBOT_INSTALLED='0'
-    SPARRY_INSTALLED='0'
-    TORBOT_INSTALLED='0'
+get_manifest() {
+    requirement_curl
+    create_temporary_directory
+    "${CURL}" -s -o "${BOTMANAGER_TEMPORARY_DIRECTORY}/manifest.list" "${BOTMANAGER_MANIFEST_URL}"
+    if [ "$?" -eq '1' ]; then
+        program_error "cannot download manifest file"
+    fi
+}
 
-    if [ -f "${BOTMANAGER_PROGRAM_DESTINATION}" ]; then
-        BOTMANAGER_INSTALLED='YES'
-        BOTMANAGER_INSTALL_LOCATION="${BOTMANAGER_PROGRAM_DESTINATION}"
-        BOTMANAGER_LOCAL_VERSION="${BOTMANAGER_VERSION}"
-        if [ "$(version "${BOTMANAGER_LOCAL_VERSION}")" -ge "$(version "${BOTMANAGER_LATEST_VERSION}")" ]; then
-            BOTMANAGER_STATUS='OK'
-        else
-            BOTMANAGER_STATUS="UPDATE"
-        fi
-    else
-        BOTMANAGER_INSTALLED='NO'
-        BOTMANAGER_INSTALL_LOCATION=''
-        BOTMANAGER_LOCAL_VERSION=''
-        BOTMANAGER_LATEST_VERSION=''
+get_pkg() {
+    requirement_curl
+    create_temporary_directory
+    "${CURL}" -s -o "${BOTMANAGER_TEMPORARY_DIRECTORY}/${1}.pkg" "${BOTMANAGER_PKG_URL}/${1}.pkg"
+    if [ "$?" -eq '1' ]; then
+        program_error "cannot download pkg file"
     fi
-    if [ -f "${SERVERBOT_PROGRAM_DESTINATION}" ]; then
-        SERVERBOT_INSTALLED='YES'
-        SERVERBOT_INSTALL_LOCATION="${SERVERBOT_PROGRAM_DESTINATION}"
-        SERVERBOT_LOCAL_VERSION="$(< "${SERVERBOT_PROGRAM_DESTINATION}" grep "SERVERBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
-        if [ "$(version "${SERVERBOT_LOCAL_VERSION}")" -ge "$(version "${SERVERBOT_LATEST_VERSION}")" ]; then
-            SERVERBOT_STATUS='OK'
-        else
-            SERVERBOT_STATUS="UPDATE"
-        fi
+}
+
+get_all_pkg() {
+    while read -r line; do
+        get_pkg "${line}"
+    done <${BOTMANAGER_TEMPORARY_DIRECTORY}/manifest.list
+}
+
+get_pkg_information() {
+    PKG_NAME="$1"
+    capitalize "$1"
+    PKG_NAME_CAPITALIZED="${CAPITALIZED_STRING}"
+    . "${BOTMANAGER_TEMPORARY_DIRECTORY}/${1}.pkg"
+    eval "PKG_LATEST_VERSION=\${${PKG_NAME_CAPITALIZED}_LATEST_VERSION}"
+    eval "PKG_DESCRIPTION=\${${PKG_NAME_CAPITALIZED}_DESCRIPTION}"
+    eval "PKG_REPOSITORY=\${${PKG_NAME_CAPITALIZED}_REPOSITORY}"
+    eval "PKG_PROGRAM=\${${PKG_NAME_CAPITALIZED}_PROGRAM}"
+    eval "PKG_PROGRAM_HASH_SHA256=\${${PKG_NAME_CAPITALIZED}_PROGRAM_HASH_SHA256}"
+    eval "PKG_PROGRAM_SOURCE=\${${PKG_NAME_CAPITALIZED}_PROGRAM_SOURCE}"
+    eval "PKG_PROGRAM_DESTINATION=\${${PKG_NAME_CAPITALIZED}_PROGRAM_DESTINATION}"
+    eval "PKG_PROGRAM_OWNER=\${${PKG_NAME_CAPITALIZED}_PROGRAM_OWNER}"
+    eval "PKG_PROGRAM_GROUP=\${${PKG_NAME_CAPITALIZED}_PROGRAM_GROUP}"
+    eval "PKG_PROGRAM_MODE=\${${PKG_NAME_CAPITALIZED}_PROGRAM_MODE}"
+    eval "PKG_PROGRAM_CONFIGURATION=\${${PKG_NAME_CAPITALIZED}_PROGRAM_CONFIGURATION}"
+    eval "PKG_PROGRAM_CONFIGURATION_HASH_SHA256=\${${PKG_NAME_CAPITALIZED}_PROGRAM_CONFIGURATION_HASH_SHA256}"
+    eval "PKG_PROGRAM_CONFIGURATION_SOURCE=\${${PKG_NAME_CAPITALIZED}_PROGRAM_CONFIGURATION_SOURCE}"
+    eval "PKG_PROGRAM_CONFIGURATION_DESTINATION=\${${PKG_NAME_CAPITALIZED}_PROGRAM_CONFIGURATION_DESTINATION}"
+    eval "PKG_PROGRAM_CONFIGURATION_OWNER=\${${PKG_NAME_CAPITALIZED}_PROGRAM_CONFIGURATION_OWNER}"
+    eval "PKG_PROGRAM_CONFIGURATION_GROUP=\${${PKG_NAME_CAPITALIZED}_PROGRAM_CONFIGURATION_GROUP}"
+    eval "PKG_PROGRAM_CONFIGURATION_MODE=\${${PKG_NAME_CAPITALIZED}_PROGRAM_CONFIGURATION_MODE}"
+    eval "PKG_USER_CONFIGURATION=\${${PKG_NAME_CAPITALIZED}_USER_CONFIGURATION}"
+    eval "PKG_USER_CONFIGURATION_HASH_SHA256=\${${PKG_NAME_CAPITALIZED}_USER_CONFIGURATION_HASH_SHA256}"
+    eval "PKG_USER_CONFIGURATION_SOURCE=\${${PKG_NAME_CAPITALIZED}_USER_CONFIGURATION_SOURCE}"
+    eval "PKG_USER_CONFIGURATION_DESTINATION=\${${PKG_NAME_CAPITALIZED}_USER_CONFIGURATION_DESTINATION}"
+    eval "PKG_USER_CONFIGURATION_OWNER=\${${PKG_NAME_CAPITALIZED}_USER_CONFIGURATION_OWNER}"
+    eval "PKG_USER_CONFIGURATION_GROUP=\${${PKG_NAME_CAPITALIZED}_USER_CONFIGURATION_GROUP}"
+    eval "PKG_USER_CONFIGURATION_MODE=\${${PKG_NAME_CAPITALIZED}_USER_CONFIGURATION_MODE}"
+}
+
+get_local_pkg_information() {
+    # depends on get_pkg_information
+    PKG_LOCAL_VERSION="$(< "${PKG_PROGRAM_DESTINATION}" grep "${PKG_NAME_CAPITALIZED}_VERSION=" | cut -f 2 -d '=' | tr -d \')"
+    PKG_LOCAL_DATE="$(< "${PKG_PROGRAM_DESTINATION}" grep "${PKG_NAME_CAPITALIZED}_VERSION_DATE=")"
+}
+
+check_local_install() {
+    # depends on get_pkg_information
+    PKG_LOCAL_INSTALLED='0'
+    if [ -f "${PKG_PROGRAM_DESTINATION}" ]; then
+        PKG_LOCAL_INSTALLED='1'
+        PKG_LOCAL_INSTALLED_ANY='1'
     else
-        SERVERBOT_INSTALLED='NO'
-        SERVERBOT_LOCAL_VERSION=''
-        SERVERBOT_LATEST_VERSION=''
-    fi
-    if [ -f "${BACKUPBOT_PROGRAM_DESTINATION}" ]; then
-        BACKUPBOT_INSTALLED='YES'
-        BACKUPBOT_INSTALL_LOCATION="${BACKUPBOT_PROGRAM_DESTINATION}"
-        BACKUPBOT_LOCAL_VERSION="$(< "${BACKUPBOT_PROGRAM_DESTINATION}" grep "BACKUPBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
-        if [ "$(version "${BACKUPBOT_LOCAL_VERSION}")" -ge "$(version "${BACKUPBOT_LATEST_VERSION}")" ]; then
-            BACKUPBOT_STATUS='OK'
-        else
-            BACKUPBOT_STATUS="UPDATE"
-        fi
-    else
-        BACKUPBOT_INSTALLED='NO'
-        BACKUPBOT_LOCAL_VERSION=''
-        BACKUPBOT_LATEST_VERSION=''
-    fi
-    if [ -f "${UPTIMEBOT_PROGRAM_DESTINATION}" ]; then
-        UPTIMEBOT_INSTALLED='YES'
-        UPTIMEBOT_INSTALL_LOCATION="${UPTIMEBOT_PROGRAM_DESTINATION}"
-        UPTIMEBOT_LOCAL_VERSION="$(< "${UPTIMEBOT_PROGRAM_DESTINATION}" grep "UPTIMEBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
-        if [ "$(version "${UPTIMEBOT_LOCAL_VERSION}")" -ge "$(version "${UPTIMEBOT_LATEST_VERSION}")" ]; then
-            UPTIMEBOT_STATUS='OK'
-        else
-            UPTIMEBOT_STATUS="UPDATE"
-        fi
-    else
-        UPTIMEBOT_INSTALLED='NO'
-        UPTIMEBOT_LOCAL_VERSION=''
-        UPTIMEBOT_LATEST_VERSION=''
-    fi
-    if [ -f "${UPDATEBOT_PROGRAM_DESTINATION}" ]; then
-        UPDATEBOT_INSTALLED='YES'
-        UPDATEBOT_INSTALL_LOCATION="${UPDATEBOT_PROGRAM_DESTINATION}"
-        UPDATEBOT_LOCAL_VERSION="$(< "${UPDATEBOT_PROGRAM_DESTINATION}" grep "UPDATEBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
-        if [ "$(version "${UPDATEBOT_LOCAL_VERSION}")" -ge "$(version "${UPDATEBOT_LATEST_VERSION}")" ]; then
-            UPDATEBOT_STATUS='OK'
-        else
-            UPDATEBOT_STATUS="UPDATE"
-        fi
-    else
-        UPDATEBOT_INSTALLED='NO'
-        UPDATEBOT_LOCAL_VERSION=''
-        UPDATEBOT_LATEST_VERSION=''
-    fi
-    if [ -f "${SPARRY_PROGRAM_DESTINATION}" ]; then
-        SPARRY_INSTALLED='YES'
-        SPARRY_INSTALL_LOCATION="${SPARRY_PROGRAM_DESTINATION}"
-        SPARRY_LOCAL_VERSION="$(< "${SPARRY_PROGRAM_DESTINATION}" grep "SPARRY_VERSION=" | cut -f 2 -d '=' | tr -d \')"
-        if [ "$(version "${SPARRY_LOCAL_VERSION}")" -ge "$(version "${SPARRY_LATEST_VERSION}")" ]; then
-            SPARRY_STATUS='OK'
-        else
-            SPARRY_STATUS="UPDATE"
-        fi
-    else
-        SPARRY_INSTALLED='NO'
-        SPARRY_LOCAL_VERSION=''
-        SPARRY_LATEST_VERSION=''
-    fi
-    if [ -f "${TORBOT_PROGRAM_DESTINATION}" ]; then
-        TORBOT_INSTALLED='YES'
-        TORBOT_INSTALL_LOCATION="${TORBOT_PROGRAM_DESTINATION}"
-        TORBOT_LOCAL_VERSION="$(< "${TORBOT_PROGRAM_DESTINATION}" grep "TORBOT_VERSION=" | cut -f 2 -d '=' | tr -d \')"
-        if [ "$(version "${TORBOT_LOCAL_VERSION}")" -ge "$(version "${TORBOT_LATEST_VERSION}")" ]; then
-            TORBOT_STATUS='OK'
-        else
-            TORBOT_STATUS="UPDATE"
-        fi
-    else
-        TORBOT_INSTALLED='NO'
-        TORBOT_LOCAL_VERSION=''
-        TORBOT_LATEST_VERSION=''
+        PKG_LOCAL_INSTALLED='0'
     fi
 }
 
@@ -354,413 +358,182 @@ gather_local_bot_information() {
 ####################################################################################################
 
 feature_overview() {
-    gather_latest_bot_information
-    gather_local_bot_information
-
+    remove_temporary_directory
+    get_manifest
+    get_all_pkg
     DIVIDER="=========================================================================================="
     HEADER="\n %-4s %-12s %-10s %-7s %-6s %-7s %-20s\n"
     FORMAT=" %-4s %-12s %-10s %-7s %-6s %-7s %-20s\n"
     WIDTH="90"
-    printf "%b" "${BOLD}"
-    printf "${HEADER}" "NR" "BOT" "INSTALLED" "STATUS" "LOCAL" "LATEST" "LOCATION"
+    NUMBER='1'
+    printf '\nThe following packages are installed:\n'
+    printf "${HEADER}" "#" "package" "installed" "status" "local" "latest" "location"
     printf "%${WIDTH}.${WIDTH}s\n" "${DIVIDER}"
-
-    printf "${FORMAT}" "1" "${BOTMANAGER_NAME}" "${BOTMANAGER_INSTALLED}" "${BOTMANAGER_STATUS}" "${BOTMANAGER_LOCAL_VERSION}" "${BOTMANAGER_LATEST_VERSION}" "${BOTMANAGER_INSTALL_LOCATION}"
-    printf "${FORMAT}" "2" "${SERVERBOT_NAME}" "${SERVERBOT_INSTALLED}" "${SERVERBOT_STATUS}" "${SERVERBOT_LOCAL_VERSION}" "${SERVERBOT_LATEST_VERSION}" "${SERVERBOT_INSTALL_LOCATION}"
-    printf "${FORMAT}" "3" "${BACKUPBOT_NAME}" "${BACKUPBOT_INSTALLED}" "${BACKUPBOT_STATUS}" "${BACKUPBOT_LOCAL_VERSION}" "${BACKUPBOT_LATEST_VERSION}" "${BACKUPBOT_INSTALL_LOCATION}"
-    printf "${FORMAT}" "4" "${UPTIMEBOT_NAME}" "${UPTIMEBOT_INSTALLED}" "${UPTIMEBOT_STATUS}" "${UPTIMEBOT_LOCAL_VERSION}" "${UPTIMEBOT_LATEST_VERSION}" "${UPTIMEBOT_INSTALL_LOCATION}"
-    printf "${FORMAT}" "5" "${UPDATEBOT_NAME}" "${UPDATEBOT_INSTALLED}" "${UPDATEBOT_STATUS}" "${UPDATEBOT_LOCAL_VERSION}" "${UPDATEBOT_LATEST_VERSION}" "${UPDATEBOT_INSTALL_LOCATION}"
-    printf "${FORMAT}" "6" "${SPARRY_NAME}" "${SPARRY_INSTALLED}" "${SPARRY_STATUS}" "${SPARRY_LOCAL_VERSION}" "${SPARRY_LATEST_VERSION}" "${SPARRY_INSTALL_LOCATION}"
-    printf "${FORMAT}\n" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}" "${TORBOT_STATUS}" "${TORBOT_LOCAL_VERSION}" "${TORBOT_LATEST_VERSION}" "${TORBOT_INSTALL_LOCATION}"
-    printf "%b" "${NC}"
-
-    remove_temp_files
+    PKG_LOCAL_INSTALLED_ANY='0'
+    while read -r line; do
+        get_pkg_information "${line}"
+        check_local_install
+        if [ "${PKG_LOCAL_INSTALLED}" -eq '1' ]; then
+            PKG_INSTALLED='YES'
+            get_local_pkg_information
+            if [ "$(version "${PKG_LOCAL_VERSION}")" -ge "$(version "${PKG_LATEST_VERSION}")" ]; then
+                PKG_STATUS='OK'
+            else
+                PKG_STATUS="UPDATE"
+            fi
+            printf "${FORMAT}" "${NUMBER}" "${PKG_NAME}" "${PKG_INSTALLED}" "${PKG_STATUS}" "${PKG_LOCAL_VERSION}" "${PKG_LATEST_VERSION}" "${PKG_PROGRAM_DESTINATION}"
+            NUMBER="$((NUMBER + 1))"
+        fi
+    done <${BOTMANAGER_TEMPORARY_DIRECTORY}/manifest.list
+    if [ "${PKG_LOCAL_INSTALLED_ANY}" -eq '0' ]; then
+        printf "${FORMAT}" "0" "NONE" "N/A" "N/A" "N/A" "N/A" "N/A"
+    fi
+    printf '\n'
 }
 
 feature_install() {
-    gather_latest_bot_information
-    gather_local_bot_information
-
-    # provide overview
+    remove_temporary_directory
+    get_manifest
+    get_all_pkg
     DIVIDER="=========================================================================================="
-    HEADER="\n %-4s %-12s %-10s %-10s\n"
-    FORMAT_OVERVIEW=" %-4s %-12s %-10s %-10s\n"
+    HEADER="\n %-4s %-12s %-7s %-10s\n"
+    FORMAT_OVERVIEW=" %-4s %-12s %-7s %-30s\n"
     FORMAT_INSTALLATION=" %-5s %-27s %-4s %-30s\n"
     WIDTH="90"
-    printf "%b" "${BOLD}"
-    printf "${HEADER}" "NR" "BOT" "INSTALLED" "DESCRIPTION"
+    NUMBER='1'
+    printf '\nThe following packages are available for installation:\n'
+    printf "${HEADER}" "#" "package" "latest" "description"
     printf "%${WIDTH}.${WIDTH}s\n" "${DIVIDER}"
-    printf "${FORMAT_OVERVIEW}" "1" "${BOTMANAGER_NAME}" "${BOTMANAGER_INSTALLED}" "${BOTMANAGER_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "2" "${SERVERBOT_NAME}" "${SERVERBOT_INSTALLED}" "${SERVERBOT_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "3" "${BACKUPBOT_NAME}" "${BACKUPBOT_INSTALLED}" "${BACKUPBOT_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "4" "${UPTIMEBOT_NAME}" "${UPTIMEBOT_INSTALLED}" "${UPTIMEBOT_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "5" "${UPDATEBOT_NAME}" "${UPDATEBOT_INSTALLED}" "${UPDATEBOT_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "6" "${SPARRY_NAME}" "${SPARRY_INSTALLED}" "${SPARRY_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}\n" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}" "${TORBOT_DESCRIPTION}"
-
-    # let the user choose
+    while read -r line; do
+        get_pkg_information "${line}"
+        check_local_install
+        if [ "${PKG_LOCAL_INSTALLED}" -eq '0' ]; then
+            printf "${FORMAT_OVERVIEW}" "${NUMBER}" "${PKG_NAME}" "${PKG_LATEST_VERSION}" "${PKG_DESCRIPTION}"
+            NUMBER="$((NUMBER + 1))"
+        fi
+    done <${BOTMANAGER_TEMPORARY_DIRECTORY}/manifest.list
+    printf '\n'
+    NUMBER="$((NUMBER - 1))" # to accomodate the empty line in the manifest
     while true
         do
-            read -r -p ' Choose program to install (number): ' PROGRAM_NUMBER_TO_INSTALL
-            [ "${PROGRAM_NUMBER_TO_INSTALL}" -ge '1' ] && [ "${PROGRAM_NUMBER_TO_INSTALL}" -le '7' ] && break
-            notice 'enter number from 1 to 7 or press ctrl+c to abort'
+            read -r -p ' Choose package to install (number): ' PACKAGE_NUMBER_TO_INSTALL
+            [ "${PACKAGE_NUMBER_TO_INSTALL}" -ge '1' ] && [ "${PACKAGE_NUMBER_TO_INSTALL}" -le "${NUMBER}" ] && break
+            printf 'enter valid number or press ctrl+c to abort\n'
         done
-
-    # install chosen software    
-    if [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '1' ]; then
-        send_error_to_log "botmanager can't install itself"
-        error 'botmanager: error: cannot install myself :('
-    elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '2' ]; then
-        if [ "${SERVERBOT_INSTALLED}" = 'YES' ]; then
-            send_error_to_log "Can't install" "${SERVERBOT_NAME}" "because it is already installed"
-            error 'botmanager: error: serverbot is already installed'
+    NUMBER='1'
+    while read -r line; do
+        get_pkg_information "${line}"
+        check_local_install
+        if [ "${PKG_LOCAL_INSTALLED}" -eq '0' ]; then
+            if [ "${PACKAGE_NUMBER_TO_INSTALL}" -ne "${NUMBER}" ]; then
+                NUMBER="$((NUMBER + 1))"
+            elif [ "${PACKAGE_NUMBER_TO_INSTALL}" -eq "${NUMBER}" ]; then
+                break
+            fi
         fi
-        printf "\n Installing %s\n" "${SERVERBOT_NAME}"
-        printf "${FORMAT_INSTALLATION}" "(1/6)" "Downloading ${SERVERBOT_NAME}" "=>" "${SERVERBOT_PROGRAM_DESTINATION}"
-        "${WGET}" -q "${SERVERBOT_PROGRAM_SOURCE}" -O "${SERVERBOT_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(2/6)" "Setting ownership" "=>"  "${SERVERBOT_PROGRAM_OWNER}:${SERVERBOT_PROGRAM_GROUP}"
-        chown "${SERVERBOT_PROGRAM_OWNER}:${SERVERBOT_PROGRAM_GROUP}" "${SERVERBOT_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(3/6)" "Setting permissions" "=>" "${SERVERBOT_PROGRAM_ACCESS}"
-        chmod "${SERVERBOT_PROGRAM_ACCESS}" "${SERVERBOT_PROGRAM_DESTINATION}"
-        send_notice_to_log "Installed" "${SERVERBOT_PROGRAM_DESTINATION}" "succesfully"
-        printf "${FORMAT_INSTALLATION}" "(4/6)" "Downloading configuration" "=>" "${SERVERBOT_CONFIG_DESTINATION}"
-        "${WGET}" -q "${SERVERBOT_CONFIG_SOURCE}" -O "${SERVERBOT_CONFIG_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(5/6)" "Setting ownership" "=>" "${SERVERBOT_CONFIG_OWNER}:${SERVERBOT_CONFIG_GROUP}"
-        chown "${SERVERBOT_CONFIG_OWNER}:${SERVERBOT_CONFIG_GROUP}" "${SERVERBOT_CONFIG_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(6/6)" "Setting permissions" "=>" "${SERVERBOT_CONFIG_ACCESS}"
-        chmod "${SERVERBOT_CONFIG_ACCESS}" "${SERVERBOT_CONFIG_DESTINATION}"
-        send_notice_to_log "Installed" "${SERVERBOT_CONFIG_DESTINATION}" "succesfully"
-        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '3' ]; then
-        if [ "${BACKUPBOT_INSTALLED}" = 'YES' ]; then
-            send_error_to_log "Can't install" "${BACKUPBOT_NAME}" "because it is already installed"
-            error 'botmanager: error: backupbot is already installed'
-        fi
-        printf "\n Installing %s\n" "${BACKUPBOT_NAME}"
-        printf "${FORMAT_INSTALLATION}" "(1/6)" "Downloading ${BACKUPBOT_NAME}" "=>" "${BACKUPBOT_PROGRAM_DESTINATION}"
-        "${WGET}" -q "${BACKUPBOT_PROGRAM_SOURCE}" -O "${BACKUPBOT_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(2/6)" "Setting ownership" "=>"  "${BACKUPBOT_PROGRAM_OWNER}:${BACKUPBOT_PROGRAM_GROUP}"
-        chown "${BACKUPBOT_PROGRAM_OWNER}:${BACKUPBOT_PROGRAM_GROUP}" "${BACKUPBOT_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(3/6)" "Setting permissions" "=>" "${BACKUPBOT_PROGRAM_ACCESS}"
-        chmod "${BACKUPBOT_PROGRAM_ACCESS}" "${BACKUPBOT_PROGRAM_DESTINATION}"
-        send_notice_to_log "Installed" "${BACKUPBOT_PROGRAM_DESTINATION}" "succesfully"
-        printf "${FORMAT_INSTALLATION}" "(4/6)" "Downloading configuration" "=>" "${BACKUPBOT_CONFIG_DESTINATION}"
-        "${WGET}" -q "${BACKUPBOT_CONFIG_SOURCE}" -O "${BACKUPBOT_CONFIG_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(5/6)" "Setting ownership" "=>" "${BACKUPBOT_CONFIG_OWNER}:${BACKUPBOT_CONFIG_GROUP}"
-        chown "${BACKUPBOT_CONFIG_OWNER}:${BACKUPBOT_CONFIG_GROUP}" "${BACKUPBOT_CONFIG_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(6/6)" "Setting permissions" "=>" "${BACKUPBOT_CONFIG_ACCESS}"
-        chmod "${BACKUPBOT_CONFIG_ACCESS}" "${BACKUPBOT_CONFIG_DESTINATION}"
-        send_notice_to_log "Installed" "${BACKUPBOT_CONFIG_DESTINATION}" "succesfully"
-        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '4' ]; then
-        if [ "${UPTIMEBOT_INSTALLED}" = 'YES' ]; then
-            send_error_to_log "Can't install" "${UPTIMEBOT_NAME}" "because it is already installed"
-            error 'botmanager: error: uptimebot is already installed'
-        fi
-        printf "\n Installing %s\n" "${UPTIMEBOT_NAME}"
-        mkdir -p /usr/local/etc/uptimebot
-        printf "${FORMAT_INSTALLATION}" "(1/9)" "Downloading ${UPTIMEBOT_NAME}" "=>" "${UPTIMEBOT_PROGRAM_DESTINATION}"
-        "${WGET}" -q "${UPTIMEBOT_PROGRAM_SOURCE}" -O "${UPTIMEBOT_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(2/9)" "Setting ownership" "=>"  "${UPTIMEBOT_PROGRAM_OWNER}:${UPTIMEBOT_PROGRAM_GROUP}"
-        chown "${UPTIMEBOT_PROGRAM_OWNER}:${UPTIMEBOT_PROGRAM_GROUP}" "${UPTIMEBOT_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(3/9)" "Setting permissions" "=>" "${UPTIMEBOT_PROGRAM_ACCESS}"
-        chmod "${UPTIMEBOT_PROGRAM_ACCESS}" "${UPTIMEBOT_PROGRAM_DESTINATION}"
-        send_notice_to_log "Installed" "${UPTIMEBOT_PROGRAM_DESTINATION}" "succesfully"
-        printf "${FORMAT_INSTALLATION}" "(4/9)" "Downloading configuration" "=>" "${UPTIMEBOT_CONFIG_DESTINATION}"
-        "${WGET}" -q "${UPTIMEBOT_CONFIG_SOURCE}" -O "${UPTIMEBOT_CONFIG_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(5/9)" "Setting ownership" "=>" "${UPTIMEBOT_CONFIG_OWNER}:${UPTIMEBOT_CONFIG_GROUP}"
-        chown "${UPTIMEBOT_CONFIG_OWNER}:${UPTIMEBOT_CONFIG_GROUP}" "${UPTIMEBOT_CONFIG_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(6/9)" "Setting permissions" "=>" "${UPTIMEBOT_CONFIG_ACCESS}"
-        chmod "${UPTIMEBOT_CONFIG_ACCESS}" "${UPTIMEBOT_CONFIG_DESTINATION}"
-        send_notice_to_log "Installed" "${UPTIMEBOT_CONFIG_DESTINATION}" "succesfully"
-        printf "${FORMAT_INSTALLATION}" "(7/9)" "Downloading targets.conf" "=>" "${UPTIMEBOT_USERCONF_DESTINATION}"
-        "${WGET}" -q "${UPTIMEBOT_USERCONF_SOURCE}" -O "${UPTIMEBOT_USERCONF_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(8/9)" "Setting ownership" "=>" "${UPTIMEBOT_USERCONF_OWNER}:${UPTIMEBOT_USERCONF_GROUP}"
-        chown "${UPTIMEBOT_USERCONF_OWNER}:${UPTIMEBOT_USERCONF_GROUP}" "${UPTIMEBOT_USERCONF_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(9/9)" "Setting permissions" "=>" "${UPTIMEBOT_USERCONF_ACCESS}"
-        chmod "${UPTIMEBOT_USERCONF_ACCESS}" "${UPTIMEBOT_USERCONF_DESTINATION}"
-        send_notice_to_log "Installed" "${UPTIMEBOT_USERCONF_DESTINATION}" "succesfully"
-        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '5' ]; then
-        if [ "${UPDATEBOT_INSTALLED}" = 'YES' ]; then
-            send_error_to_log "Can't install" "${UPDATEBOT_NAME}" "because it is already installed"
-            error 'botmanager: error: updatebot is already installed'
-        fi
-        printf "\n Installing %s\n" "${UPDATEBOT_NAME}"
-        printf "${FORMAT_INSTALLATION}" "(1/3)" "Downloading ${UPDATEBOT_NAME}" "=>" "${UPDATEBOT_PROGRAM_DESTINATION}"
-        "${WGET}" -q "${UPDATEBOT_PROGRAM_SOURCE}" -O "${UPDATEBOT_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(2/3)" "Setting ownership" "=>"  "${UPDATEBOT_PROGRAM_OWNER}:${UPDATEBOT_PROGRAM_GROUP}"
-        chown "${UPDATEBOT_PROGRAM_OWNER}:${UPDATEBOT_PROGRAM_GROUP}" "${UPDATEBOT_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(3/3)" "Setting permissions" "=>" "${UPDATEBOT_PROGRAM_ACCESS}"
-        chmod "${UPDATEBOT_PROGRAM_ACCESS}" "${UPDATEBOT_PROGRAM_DESTINATION}"
-        send_notice_to_log "Installed" "${UPDATEBOT_PROGRAM_DESTINATION}" "succesfully"
-        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '6' ]; then
-        if [ "${SPARRY_INSTALLED}" = 'YES' ]; then
-            send_error_to_log "Can't install" "${SPARRY_NAME}" "because it is already installed"
-            error 'botmanager: error: sparry is already installed'
-        fi
-        printf "\n Installing %s\n" "${SPARRY_NAME}"
-        printf "${FORMAT_INSTALLATION}" "(1/6)" "Downloading ${SPARRY_NAME}" "=>" "${SPARRY_PROGRAM_DESTINATION}"
-        "${WGET}" -q "${SPARRY_PROGRAM_SOURCE}" -O "${SPARRY_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(2/6)" "Setting ownership" "=>"  "${SPARRY_PROGRAM_OWNER}:${SPARRY_PROGRAM_GROUP}"
-        chown "${SPARRY_PROGRAM_OWNER}:${SPARRY_PROGRAM_GROUP}" "${SPARRY_PROGRAM_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(3/6)" "Setting permissions" "=>" "${SPARRY_PROGRAM_ACCESS}"
-        chmod "${SPARRY_PROGRAM_ACCESS}" "${SPARRY_PROGRAM_DESTINATION}"
-        send_notice_to_log "Installed" "${SPARRY_PROGRAM_DESTINATION}" "succesfully"
-        printf "${FORMAT_INSTALLATION}" "(4/6)" "Downloading configuration" "=>" "${SPARRY_CONFIG_DESTINATION}"
-        "${WGET}" -q "${SPARRY_CONFIG_SOURCE}" -O "${SPARRY_CONFIG_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(5/6)" "Setting ownership" "=>" "${SPARRY_CONFIG_OWNER}:${SPARRY_CONFIG_GROUP}"
-        chown "${SPARRY_CONFIG_OWNER}:${SPARRY_CONFIG_GROUP}" "${SPARRY_CONFIG_DESTINATION}"
-        printf "${FORMAT_INSTALLATION}" "(6/6)" "Setting permissions" "=>" "${SPARRY_CONFIG_ACCESS}"
-        chmod "${SPARRY_CONFIG_ACCESS}" "${SPARRY_CONFIG_DESTINATION}"
-        send_notice_to_log "Installed" "${SPARRY_CONFIG_DESTINATION}" "succesfully"
-        printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_INSTALL}" -eq '7' ]; then
-        error 'botmanager: error: torbot is not finished yet'
+    done <${BOTMANAGER_TEMPORARY_DIRECTORY}/manifest.list
+    printf "\n Installing %s\n" "${PKG_NAME}"
+    printf "${FORMAT_INSTALLATION}" "(1)" "Downloading ${PKG_NAME}" "=>" "${PKG_PROGRAM_DESTINATION}"
+    "${CURL}" -s -o "${PKG_PROGRAM_DESTINATION}" "${PKG_PROGRAM_SOURCE}"
+    printf "${FORMAT_INSTALLATION}" "(2)" "Setting ownership" "=>"  "${PKG_PROGRAM_OWNER}:${PKG_PROGRAM_GROUP}"
+    chown "${PKG_PROGRAM_OWNER}:${PKG_PROGRAM_GROUP}" "${PKG_PROGRAM_DESTINATION}"
+    printf "${FORMAT_INSTALLATION}" "(3)" "Setting permissions" "=>" "${PKG_PROGRAM_MODE}"
+    chmod "${PKG_PROGRAM_MODE}" "${PKG_PROGRAM_DESTINATION}"
+    if [ "${PKG_PROGRAM_CONFIGURATION}" -eq '1' ]; then
+        printf "${FORMAT_INSTALLATION}" "(4)" "Downloading configuration" "=>" "${PKG_PROGRAM_CONFIGURATION_DESTINATION}"
+        "${CURL}" --create-dirs -s -o "${PKG_PROGRAM_CONFIGURATION_DESTINATION}" "${PKG_PROGRAM_CONFIGURATION_SOURCE}"
+        printf "${FORMAT_INSTALLATION}" "(5)" "Setting ownership" "=>" "${PKG_PROGRAM_CONFIGURATION_OWNER}:${PKG_PROGRAM_CONFIGURATION_GROUP}"
+        chown "${PKG_PROGRAM_CONFIGURATION_OWNER}:${PKG_PROGRAM_CONFIGURATION_GROUP}" "${PKG_PROGRAM_CONFIGURATION_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(6)" "Setting permissions" "=>" "${PKG_PROGRAM_CONFIGURATION_MODE}"
+        chmod "${PKG_PROGRAM_CONFIGURATION_MODE}" "${PKG_PROGRAM_CONFIGURATION_DESTINATION}"
     fi
-    printf "%b" "${NC}"
-
-    remove_temp_files
+    if [ "${PKG_USER_CONFIGURATION}" -eq '1' ]; then
+        printf "${FORMAT_INSTALLATION}" "(7)" "Downloading configuration" "=>" "${PKG_USER_CONFIGURATION_DESTINATION}"
+        "${CURL}" --create-dirs -s -o "${PKG_USER_CONFIGURATION_DESTINATION}" "${PKG_USER_CONFIGURATION_SOURCE}"
+        printf "${FORMAT_INSTALLATION}" "(8)" "Setting ownership" "=>" "${PKG_USER_CONFIGURATION_OWNER}:${PKG_USER_CONFIGURATION_GROUP}"
+        chown "${PKG_USER_CONFIGURATION_OWNER}:${PKG_USER_CONFIGURATION_GROUP}" "${PKG_USER_CONFIGURATION_DESTINATION}"
+        printf "${FORMAT_INSTALLATION}" "(9)" "Setting permissions" "=>" "${PKG_USER_CONFIGURATION_MODE}"
+        chmod "${PKG_USER_CONFIGURATION_MODE}" "${PKG_USER_CONFIGURATION_DESTINATION}"
+    fi
+    program_logger "Installed" "${PKG_PROGRAM_DESTINATION}" "succesfully"
+    printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
 }
 
 feature_remove() {
-    gather_latest_bot_information
-    gather_local_bot_information
-
-    # provide overview
-    DIVIDER="=========================================================================================="
-    HEADER="\n %-4s %-12s %-10s %-10s\n"
-    FORMAT_OVERVIEW=" %-4s %-12s %-10s %-10s\n"
+    feature_overview
     FORMAT_REMOVE=" %-5s %-43s %-4s %-30s\n"
-    FORMAT_REMOVE_LONG=" %-5s %-52s %-4s %-30s\n"
-    WIDTH="90"
-    printf "%b" "${BOLD}"
-    printf "${HEADER}" "NR" "BOT" "INSTALLED" "DESCRIPTION"
-    printf "%${WIDTH}.${WIDTH}s\n" "${DIVIDER}"
-    printf "${FORMAT_OVERVIEW}" "1" "${BOTMANAGER_NAME}" "${BOTMANAGER_INSTALLED}" "${BOTMANAGER_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "2" "${SERVERBOT_NAME}" "${SERVERBOT_INSTALLED}" "${SERVERBOT_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "3" "${BACKUPBOT_NAME}" "${BACKUPBOT_INSTALLED}" "${BACKUPBOT_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "4" "${UPTIMEBOT_NAME}" "${UPTIMEBOT_INSTALLED}" "${UPTIMEBOT_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "5" "${UPDATEBOT_NAME}" "${UPDATEBOT_INSTALLED}" "${UPDATEBOT_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}" "6" "${SPARRY_NAME}" "${SPARRY_INSTALLED}" "${SPARRY_DESCRIPTION}"
-    printf "${FORMAT_OVERVIEW}\n" "7" "${TORBOT_NAME}" "${TORBOT_INSTALLED}" "${TORBOT_DESCRIPTION}"
-
-    # let the user choose
+    NUMBER="$((NUMBER - 1))" # to accomodate the empty line in the manifest
     while true
         do
-            read -r -p ' Choose program to remove (number): ' PROGRAM_NUMBER_TO_REMOVE
-            [ "${PROGRAM_NUMBER_TO_REMOVE}" -ge '1' ] && [ "${PROGRAM_NUMBER_TO_REMOVE}" -le '7' ] && break
-            notice 'enter number from 1 to 7 or press ctrl+c to abort'
+            read -r -p ' Choose program to remove (number): ' PACKAGE_NUMBER_TO_REMOVE
+            [ "${PACKAGE_NUMBER_TO_REMOVE}" -ge '1' ] && [ "${PACKAGE_NUMBER_TO_REMOVE}" -le "${NUMBER}" ] && break
+            printf 'enter valid number or press ctrl+c to abort\n'
         done
-
-    # remove chosen software
-    if [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '1' ]; then
-        send_error_to_log "botmanager can't remove itself"
-        error 'botmanager: error: cannot remove myself :('
-    elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '2' ]; then
-        printf "\n Removing %s\n" "${SERVERBOT_NAME}"
-        if [ -f "${SERVERBOT_PROGRAM_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE}" "(1/2)" "Found ${SERVERBOT_PROGRAM_DESTINATION}" "=>" "removing"
-            rm "${SERVERBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Removed" "${SERVERBOT_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE}" "(1/2)" "Can't find ${SERVERBOT_PROGRAM_DESTINATION}" "=>" "ignoring"
+    NUMBER='1'
+    while read -r line; do
+        get_pkg_information "${line}"
+        check_local_install
+        if [ "${PKG_LOCAL_INSTALLED}" -eq '1' ]; then
+            if [ "${PACKAGE_NUMBER_TO_REMOVE}" -ne "${NUMBER}" ]; then
+                NUMBER="$((NUMBER + 1))"
+            elif [ "${PACKAGE_NUMBER_TO_REMOVE}" -eq "${NUMBER}" ]; then
+                break
+            fi
         fi
-        if [ -f "${SERVERBOT_CONFIG_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE}" "(2/2)" "Found ${SERVERBOT_CONFIG_DESTINATION}" "=>" "removing"
-            rm "${SERVERBOT_CONFIG_DESTINATION}"
-            send_notice_to_log "Removed" "${SERVERBOT_CONFIG_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE}" "(2/2)" "Can't find ${SERVERBOT_CONFIG_DESTINATION}" "=>" "ignoring"
-        fi
-        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '3' ]; then
-        printf "\n Removing %s\n" "${BACKUPBOT_NAME}"
-        if [ -f "${BACKUPBOT_PROGRAM_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE}" "(1/2)" "Found ${BACKUPBOT_PROGRAM_DESTINATION}" "=>" "removing"
-            rm "${BACKUPBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Removed" "${BACKUPBOT_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE}" "(1/2)" "Can't find ${BACKUPBOT_PROGRAM_DESTINATION}" "=>" "ignoring"
-        fi
-        if [ -f "${BACKUPBOT_CONFIG_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE}" "(2/2)" "Found ${BACKUPBOT_CONFIG_DESTINATION}" "=>" "removing"
-            rm "${BACKUPBOT_CONFIG_DESTINATION}"
-            send_notice_to_log "Removed" "${BACKUPBOT_CONFIG_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE}" "(2/2)" "Can't find ${BACKUPBOT_CONFIG_DESTINATION}" "=>" "ignoring"
-        fi
-        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '4' ]; then
-        printf "\n Removing %s\n" "${UPTIMEBOT_NAME}"
-        if [ -f "${UPTIMEBOT_PROGRAM_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE_LONG}" "(1/3)" "Found ${UPTIMEBOT_PROGRAM_DESTINATION}" "=>" "removing"
-            rm "${UPTIMEBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Removed" "${UPTIMEBOT_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE_LONG}" "(1/3)" "Can't find ${UPTIMEBOT_PROGRAM_DESTINATION}" "=>" "ignoring"
-        fi
-        if [ -f "${UPTIMEBOT_CONFIG_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE_LONG}" "(2/3)" "Found ${UPTIMEBOT_CONFIG_DESTINATION}" "=>" "removing"
-            rm "${UPTIMEBOT_CONFIG_DESTINATION}"
-            send_notice_to_log "Removed" "${UPTIMEBOT_CONFIG_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE_LONG}" "(2/3)" "Can't find ${UPTIMEBOT_CONFIG_DESTINATION}" "=>" "ignoring"
-        fi
-        if [ -f "${UPTIMEBOT_USERCONF_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE_LONG}" "(3/3)" "Found ${UPTIMEBOT_USERCONF_DESTINATION}" "=>" "removing"
-            rm "${UPTIMEBOT_USERCONF_DESTINATION}"
-            send_notice_to_log "Removed" "${UPTIMEBOT_USERCONF_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE_LONG}" "(3/3)" "Can't find ${UPTIMEBOT_USERCONF_DESTINATION}" "=>" "ignoring"
-        fi
-        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '5' ]; then
-        printf "\n Removing %s\n" "${UPDATEBOT_NAME}"
-        if [ -f "${UPDATEBOT_PROGRAM_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE}" "(1/1)" "Found ${UPDATEBOT_PROGRAM_DESTINATION}" "=>" "removing"
-            rm "${UPDATEBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Removed" "${UPDATEBOT_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE}" "(1/1)" "Can't find ${UPDATEBOT_PROGRAM_DESTINATION}" "=>" "ignoring"
-        fi
-        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '6' ]; then
-        printf "\n Removing %s\n" "${SPARRY_NAME}"
-        if [ -f "${SPARRY_PROGRAM_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE}" "(1/2)" "Found ${SPARRY_PROGRAM_DESTINATION}" "=>" "removing"
-            rm "${SPARRY_PROGRAM_DESTINATION}"
-            send_notice_to_log "Removed" "${SPARRY_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE}" "(1/2)" "Can't find ${SPARRY_PROGRAM_DESTINATION}" "=>" "ignoring"
-        fi
-        if [ -f "${SPARRY_CONFIG_DESTINATION}" ]; then
-            printf "${FORMAT_REMOVE}" "(2/2)" "Found ${SPARRY_CONFIG_DESTINATION}" "=>" "removing"
-            rm "${SPARRY_CONFIG_DESTINATION}"
-            send_notice_to_log "Removed" "${SPARRY_CONFIG_DESTINATION}" "succesfully"
-        else
-            printf "${FORMAT_REMOVE}" "(2/2)" "Can't find ${SPARRY_CONFIG_DESTINATION}" "=>" "ignoring"
-        fi
-        printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
-    elif [ "${PROGRAM_NUMBER_TO_REMOVE}" -eq '7' ]; then
-        error 'botmanager: error: torbot is not finished yet'
+    done <${BOTMANAGER_TEMPORARY_DIRECTORY}/manifest.list
+    printf "\n Removing %s\n" "${PKG_NAME}"
+    printf "${FORMAT_REMOVE}" "(1)" "Found ${PKG_PROGRAM_DESTINATION}" "=>" "removing"
+    rm -f "${PKG_PROGRAM_DESTINATION}"
+    if [ "${PKG_PROGRAM_CONFIGURATION}" -eq '1' ]; then
+        printf "${FORMAT_REMOVE}" "(2)" "Found ${PKG_PROGRAM_CONFIGURATION_DESTINATION}" "=>" "removing"
+        rm -f "${PKG_PROGRAM_CONFIGURATION_DESTINATION}"
     fi
-    printf "%b" "${NC}"
-
-    remove_temp_files
+    if [ "${PKG_USER_CONFIGURATION}" -eq '1' ]; then
+        printf "${FORMAT_REMOVE}" "(3)" "Found ${PKG_USER_CONFIGURATION_DESTINATION}" "=>" "removing"
+        rm -f "${PKG_USER_CONFIGURATION_DESTINATION}"
+    fi
+    program_logger "Removed" "${PKG_PROGRAM_DESTINATION}" "succesfully"
+    printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
 }
 
 feature_update() {
     feature_overview
-
-    # update software
     FORMAT_UPDATE=" %-8s %-17s %-4s %-12s\n"
-    printf "%b" "${BOLD}"
     printf " Updating software\n"
-    if [ "${BOTMANAGER_INSTALLED}" = 'YES' ]; then
-        if [ "${BOTMANAGER_STATUS}" = 'UPDATE' ]; then
-            printf " Skipping update for %s because I can't update myself\n" "${BOTMANAGER_NAME}"
-            send_notice_to_log "Updated" "${BOTMANAGER_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf " No update available for %s\n" "${BOTMANAGER_NAME}"
+    while read -r line; do
+        get_pkg_information "${line}"
+        check_local_install
+        if [ "${PKG_LOCAL_INSTALLED}" -eq '1' ]; then
+            PKG_INSTALLED='YES'
+            get_local_pkg_information
+            if [ "$(version "${PKG_LOCAL_VERSION}")" -ge "$(version "${PKG_LATEST_VERSION}")" ]; then
+                printf " No update available for %s, skipping\n" "${PKG_NAME}"
+            elif [ "$(version "${PKG_LOCAL_VERSION}")" -lt "$(version "${PKG_LATEST_VERSION}")" ]; then
+                printf "${FORMAT_UPDATE}" "Updating" "${PKG_NAME} ${PKG_LOCAL_VERSION}" "=>" "${PKG_LATEST_VERSION}"
+                "${CURL}" -s -o "${PKG_PROGRAM_DESTINATION}" "${PKG_PROGRAM_SOURCE}"
+                program_logger "Updated" "${PKG_PROGRAM_DESTINATION}" "succesfully"
+            fi
         fi
-    fi
-    if [ "${SERVERBOT_INSTALLED}" = 'YES' ]; then
-        if [ "${SERVERBOT_STATUS}" = 'UPDATE' ]; then
-            printf "${FORMAT_UPDATE}" "Updating" "${SERVERBOT_NAME} ${SERVERBOT_LOCAL_VERSION}" "=>" "${SERVERBOT_LATEST_VERSION}"         
-            "${WGET}" -q "${SERVERBOT_PROGRAM_SOURCE}" -O "${SERVERBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${SERVERBOT_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf " No update available for %s\n" "${SERVERBOT_NAME}"
-        fi
-    fi
-    if [ "${BACKUPBOT_INSTALLED}" = 'YES' ]; then
-        if [ "${BACKUPBOT_STATUS}" = 'UPDATE' ]; then
-            printf "${FORMAT_UPDATE}" "Updating" "${BACKUPBOT_NAME} ${BACKUPBOT_LOCAL_VERSION}" "=>" "${BACKUPBOT_LATEST_VERSION}"
-            "${WGET}" -q "${BACKUPBOT_PROGRAM_SOURCE}" -O "${BACKUPBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${BACKUPBOT_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf " No update available for %s\n" "${BACKUPBOT_NAME}"
-        fi
-    fi
-    if [ "${UPTIMEBOT_INSTALLED}" = 'YES' ]; then
-        if [ "${UPTIMEBOT_STATUS}" = 'UPDATE' ]; then
-            printf "${FORMAT_UPDATE}" "Updating" "${UPTIMEBOT_NAME} ${UPTIMEBOT_LOCAL_VERSION}" "=>" "${UPTIMEBOT_LATEST_VERSION}"
-            "${WGET}" -q "${UPTIMEBOT_PROGRAM_SOURCE}" -O "${UPTIMEBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${UPTIMEBOT_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf " No update available for %s\n" "${UPTIMEBOT_NAME}"
-        fi
-    fi
-    if [ "${UPDATEBOT_INSTALLED}" = 'YES' ]; then
-        if [ "${UPDATEBOT_STATUS}" = 'UPDATE' ]; then
-            printf "${FORMAT_UPDATE}" "Updating" "${UPDATEBOT_NAME} ${UPDATEBOT_LOCAL_VERSION}" "=>" "${UPDATEBOT_LATEST_VERSION}"
-            "${WGET}" -q "${UPDATEBOT_PROGRAM_SOURCE}" -O "${UPDATEBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${UPDATEBOT_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf " No update available for %s\n" "${UPDATEBOT_NAME}"
-        fi
-    fi
-    if [ "${SPARRY_INSTALLED}" = 'YES' ]; then
-        if [ "${SPARRY_STATUS}" = 'UPDATE' ]; then
-            printf "${FORMAT_UPDATE}" "Updating" "${SPARRY_NAME} ${SPARRY_LOCAL_VERSION}" "=>" "${SPARRY_LATEST_VERSION}"
-            "${WGET}" -q "${SPARRY_PROGRAM_SOURCE}" -O "${SPARRY_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${SPARRY_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf " No update available for %s\n" "${SPARRY_NAME}"
-        fi
-    fi
-    if [ "${TORBOT_INSTALLED}" = 'YES' ]; then
-        if [ "${TORBOT_STATUS}" = 'UPDATE' ]; then
-            printf "${FORMAT_UPDATE}" "Updating" "${TORBOT_NAME} ${TORBOT_LOCAL_VERSION}" "=>" "${TORBOT_LATEST_VERSION}"
-            "${WGET}" -q "${TORBOT_PROGRAM_SOURCE}" -O "${TORBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${TORBOT_PROGRAM_DESTINATION}" "succesfully"
-        else
-            printf " No update available for %s\n" "${TORBOT_NAME}"
-        fi
-    fi
-    printf "\nAll done! \\\( ^ ᴗ ^ )/\n\n"
-    printf "%b" "${NC}"
+    done <${BOTMANAGER_TEMPORARY_DIRECTORY}/manifest.list
+    printf "\n All done! \\\( ^ ᴗ ^ )/\n\n"
 }
 
 feature_unattended_update() {
-    gather_latest_bot_information
-    gather_local_bot_information
-
-    # update software
-    if [ "${SERVERBOT_INSTALLED}" = 'YES' ]; then
-        if [ "${SERVERBOT_STATUS}" = 'UPDATE' ]; then
-            "${WGET}" -q "${SERVERBOT_PROGRAM_SOURCE}" -O "${SERVERBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${SERVERBOT_PROGRAM_DESTINATION}" "succesfully"
+    remove_temporary_directory
+    get_manifest
+    get_all_pkg
+    while read -r line; do
+        get_pkg_information "${line}"
+        check_local_install
+        if [ "${PKG_LOCAL_INSTALLED}" -eq '1' ]; then
+            PKG_INSTALLED='YES'
+            get_local_pkg_information  
+            if [ "$(version "${PKG_LOCAL_VERSION}")" -lt "$(version "${PKG_LATEST_VERSION}")" ]; then
+                "${CURL}" -s -o "${PKG_PROGRAM_DESTINATION}" "${PKG_PROGRAM_SOURCE}"
+                program_logger "Updated" "${PKG_PROGRAM_DESTINATION}" "succesfully"
+            fi
         fi
-    fi
-    if [ "${BACKUPBOT_INSTALLED}" = 'YES' ]; then
-        if [ "${BACKUPBOT_STATUS}" = 'UPDATE' ]; then
-            "${WGET}" -q "${BACKUPBOT_PROGRAM_SOURCE}" -O "${BACKUPBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${BACKUPBOT_PROGRAM_DESTINATION}" "succesfully"
-        fi
-    fi
-    if [ "${UPTIMEBOT_INSTALLED}" = 'YES' ]; then
-        if [ "${UPTIMEBOT_STATUS}" = 'UPDATE' ]; then
-            "${WGET}" -q "${UPTIMEBOT_PROGRAM_SOURCE}" -O "${UPTIMEBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${UPTIMEBOT_PROGRAM_DESTINATION}" "succesfully"
-        fi
-    fi
-    if [ "${UPDATEBOT_INSTALLED}" = 'YES' ]; then
-        if [ "${UPDATEBOT_STATUS}" = 'UPDATE' ]; then
-            "${WGET}" -q "${UPDATEBOT_PROGRAM_SOURCE}" -O "${UPDATEBOT_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${UPDATEBOT_PROGRAM_DESTINATION}" "succesfully"
-        fi
-    fi
-    if [ "${SPARRY_INSTALLED}" = 'YES' ]; then
-        if [ "${SPARRY_STATUS}" = 'UPDATE' ]; then
-            "${WGET}" -q "${SPARRY_PROGRAM_SOURCE}" -O "${SPARRY_PROGRAM_DESTINATION}"
-            send_notice_to_log "Updated" "${SPARRY_PROGRAM_DESTINATION}" "succesfully"
-        fi
-    fi
-
-    remove_temp_files
+    done <${BOTMANAGER_TEMPORARY_DIRECTORY}/manifest.list
 }
 
 ####################################################################################################
@@ -806,6 +579,7 @@ botmanager_main() {
         feature_overview
         exit 0
     fi
+    remove_temporary_directory
 }
 
 ####################################################################################################
