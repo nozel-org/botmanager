@@ -1,6 +1,6 @@
 SERVERBOT_NAME='serverbot'
-SERVERBOT_LATEST_VERSION='1.11.0'
-SERVERBOT_DESCRIPTION='Lightweight server health monitoring and alerting tool for FreeBSD'
+SERVERBOT_LATEST_VERSION='1.12.0'
+SERVERBOT_DESCRIPTION='Lightweight server health monitoring and alerting tool'
 SERVERBOT_REPOSITORY='https://codeberg.org/nozel/serverbot'
 SERVERBOT_PROGRAM='1'
 SERVERBOT_PROGRAM_HASH_SHA256='placeholder'

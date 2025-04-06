@@ -1,6 +1,6 @@
 BACKUPBOT_NAME='backupbot'
 BACKUPBOT_LATEST_VERSION='1.8.1'
-BACKUPBOT_DESCRIPTION='Simple file and MySQL database backup tool for FreeBSD'
+BACKUPBOT_DESCRIPTION='Simple file and MySQL database backup tool'
 BACKUPBOT_REPOSITORY='https://codeberg.org/nozel/backupbot'
 BACKUPBOT_PROGRAM='1'
 BACKUPBOT_PROGRAM_HASH_SHA256='placeholder'
